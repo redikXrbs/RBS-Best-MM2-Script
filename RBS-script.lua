@@ -1,5 +1,5 @@
--- [[ RBS - MM2 ULTIMATE FARM v3.1 (FIXED) ]]
--- Исправлено: независимый God Mode, уменьшена задержка, улучшена коллизия, работа кнопок
+-- [[ RBS - MM2 ULTIMATE FARM v3.2 (FLY FIX) ]]
+-- Исправлено: плавный полёт, правильное отключение коллизии, быстрый сбор
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -22,21 +22,21 @@ local farmLoop = nil
 local noCollisionLoop = nil
 
 -- ===========================
--- НАСТРОЙКИ (можно менять)
+-- НАСТРОЙКИ
 -- ===========================
 local CONFIG = {
-    FLY_SPEED = 28,            -- Скорость полета (было 35)
-    COLLECTION_DELAY = 0.4,    -- Задержка между монетами (было 0.1, теперь 0.4 сек)
-    RETURN_DELAY = 0.8,        -- Задержка перед возвратом в центр
-    CENTER_OFFSET = -6,        -- Смещение под центр карты (было -10, чтобы не проваливаться)
-    TWEEN_STYLE = Enum.EasingStyle.Quad, -- Плавное движение
+    FLY_SPEED = 55,            -- Скорость полёта (высокая, но плавная)
+    COLLECTION_DELAY = 0.15,   -- Задержка между монетами (0.15 сек)
+    RETURN_DELAY = 0.3,        -- Задержка перед возвратом в центр
+    CENTER_OFFSET = -5,        -- Смещение под центр карты
+    TWEEN_STYLE = Enum.EasingStyle.Linear,  -- Линейное движение (без торможений)
 }
 
 -- ===========================
 -- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 -- ===========================
 
--- Проверка: идет ли раунд и является ли игрок участником (не в лобби)
+-- Проверка: идет ли раунд
 local function IsRoundActive()
     local players = game.Players:GetPlayers()
     local hasMurderer = false
@@ -45,28 +45,16 @@ local function IsRoundActive()
     for _, player in ipairs(players) do
         local character = player.Character
         if character then
-            local backpack = player.Backpack
-            if character:FindFirstChildOfClass("Tool") then
-                local tool = character:FindFirstChildOfClass("Tool")
-                if tool and (tool.Name:lower():find("knife") or tool.Name:lower():find("gun")) then
-                    if player ~= LocalPlayer then
-                        hasMurderer = hasMurderer or tool.Name:lower():find("knife")
-                        hasSheriff = hasSheriff or tool.Name:lower():find("gun")
-                    end
-                end
-            end
-            if backpack then
-                for _, tool in ipairs(backpack:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        if tool.Name:lower():find("knife") then hasMurderer = true end
-                        if tool.Name:lower():find("gun") then hasSheriff = true end
-                    end
+            local tool = character:FindFirstChildOfClass("Tool")
+            if tool then
+                if tool.Name:lower():find("knife") and player ~= LocalPlayer then
+                    hasMurderer = true
+                elseif tool.Name:lower():find("gun") and player ~= LocalPlayer then
+                    hasSheriff = true
                 end
             end
         end
     end
-
-    local roundActive = hasMurderer or hasSheriff
 
     local character = LocalPlayer.Character
     local isInLobby = false
@@ -77,10 +65,9 @@ local function IsRoundActive()
         end
     end
 
-    return roundActive and not isInLobby
+    return (hasMurderer or hasSheriff) and not isInLobby
 end
 
--- Получение персонажа
 local function GetCharacter()
     local character = LocalPlayer.Character
     if not character or not character.Parent then
@@ -89,7 +76,6 @@ local function GetCharacter()
     return character
 end
 
--- Получение RootPart
 local function GetRootPart()
     local character = GetCharacter()
     local rootPart = character:FindFirstChild("HumanoidRootPart")
@@ -100,7 +86,7 @@ local function GetRootPart()
     return rootPart
 end
 
--- Обновление центральной позиции (над картой, а не под ней, чтобы не проваливаться)
+-- Обновление центра карты
 local function UpdateCenterPosition()
     local map = workspace:FindFirstChild("Map")
     if map then
@@ -127,7 +113,7 @@ local function UpdateCenterPosition()
     end
 end
 
--- Поиск всех монет на карте
+-- Поиск монет
 local function FindAllCoins()
     local coins = {}
     local rootPart = GetRootPart()
@@ -159,30 +145,30 @@ local function FindAllCoins()
     return coins
 end
 
--- ПЛАВНОЕ Tween движение (без дерганья)
+-- ✅ ПЛАВНЫЙ TWEEN (без телепортов)
 local function SmoothTweenToPosition(targetPosition)
     local rootPart = GetRootPart()
     if not rootPart then return end
 
+    -- Отменяем предыдущий tween
     if currentTween and currentTween.PlaybackState == Enum.PlaybackState.Playing then
         currentTween:Cancel()
+        currentTween = nil
     end
 
     local distance = (rootPart.Position - targetPosition).Magnitude
-    local duration = math.max(0.3, distance / CONFIG.FLY_SPEED)
+    local duration = distance / CONFIG.FLY_SPEED
+    if duration < 0.1 then duration = 0.1 end
 
     local tweenInfo = TweenInfo.new(duration, CONFIG.TWEEN_STYLE, Enum.EasingDirection.Out)
     local newTween = TweenService:Create(rootPart, tweenInfo, {CFrame = CFrame.new(targetPosition)})
     currentTween = newTween
 
-    pcall(function()
-        newTween:Play()
-    end)
-
+    newTween:Play()
     return newTween
 end
 
--- Улучшенный сбор монеты
+-- ✅ СБОР МОНЕТЫ (без долгих остановок)
 local function CollectCoin(coin)
     if not coin or not coin.object or not coin.object.Parent then
         return false
@@ -190,16 +176,13 @@ local function CollectCoin(coin)
 
     local success = false
     pcall(function()
+        -- Летим к монете
         SmoothTweenToPosition(coin.position)
         
-        -- Ждём прибытия
-        local timeout = 0
-        while currentTween and currentTween.PlaybackState == Enum.PlaybackState.Playing and timeout < 30 do
-            wait(0.05)
-            timeout = timeout + 1
-        end
-        wait(0.08)
-
+        -- Не ждём полного завершения tween, даём чуть-чуть времени
+        wait(0.05)
+        
+        -- Попытка сбора
         local clickDetector = coin.object:FindFirstChildWhichIsA("ClickDetector")
         if clickDetector then
             fireclickdetector(clickDetector)
@@ -209,16 +192,17 @@ local function CollectCoin(coin)
         local proximityPrompt = coin.object:FindFirstChildWhichIsA("ProximityPrompt")
         if proximityPrompt then
             proximityPrompt:InputHoldBegin()
-            wait(0.08)
+            wait(0.05)
             proximityPrompt:InputHoldEnd()
             success = true
         end
 
+        -- Если не сработало — телепортируемся прямо на монету
         if not success then
             local rootPart = GetRootPart()
             if rootPart then
                 rootPart.CFrame = coin.object.CFrame
-                wait(0.08)
+                wait(0.05)
                 success = true
             end
         end
@@ -226,25 +210,25 @@ local function CollectCoin(coin)
     return success
 end
 
--- ===========================
--- КОЛЛИЗИЯ (ИСПРАВЛЕНА)
--- ===========================
+-- ✅ ПРАВИЛЬНОЕ ОТКЛЮЧЕНИЕ КОЛЛИЗИИ
 local function SetCollision(enabled)
     local character = GetCharacter()
     for _, part in ipairs(character:GetDescendants()) do
         if part:IsA("BasePart") then
-            -- Не отключаем коллизию полностью, чтобы не проваливаться
-            part.CanCollide = false  -- отключаем для прохождения сквозь стены
-            part.CanQuery = enabled  -- нужно для сбора монет
-            -- Включаем заземление для RootPart
-            if part.Name == "HumanoidRootPart" then
-                part.CanCollide = false
-            end
+            part.CanCollide = not enabled  -- enabled = true (коллизия ВКЛ), enabled = false (коллизия ВЫКЛ)
+            part.CanQuery = not enabled
         end
+    end
+    
+    -- Дополнительно отключаем коллизию для HumanoidRootPart отдельно
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if rootPart then
+        rootPart.CanCollide = false
+        rootPart.CanQuery = false
     end
 end
 
--- Дополнительная защита от падения под карту
+-- Защита от падения под карту
 local function AntiFallProtection()
     if noCollisionLoop then noCollisionLoop:Disconnect() end
     
@@ -252,19 +236,15 @@ local function AntiFallProtection()
         if not state.autoFarm then return end
         local character = GetCharacter()
         local rootPart = character:FindFirstChild("HumanoidRootPart")
-        if rootPart and rootPart.Position.Y < -20 then
-            -- Телепортируем обратно в центр, если провалился
+        if rootPart and rootPart.Position.Y < -15 then
             if centerPosition then
                 rootPart.CFrame = CFrame.new(centerPosition)
-                print("[RBS] Anti-fall: teleported back to center")
             end
         end
     end)
 end
 
--- ===========================
--- GOD MODE (ПОЛНОСТЬЮ НЕЗАВИСИМЫЙ)
--- ===========================
+-- ✅ GOD MODE (независимый)
 local function SetGodMode(enabled)
     local character = GetCharacter()
     local humanoid = character:FindFirstChild("Humanoid")
@@ -295,8 +275,6 @@ local function SetGodMode(enabled)
                 end
             end
         end)
-        
-        print("[RBS] God Mode: ON")
     else
         if godModeConnection then
             godModeConnection:Disconnect()
@@ -307,23 +285,18 @@ local function SetGodMode(enabled)
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
         humanoid.BreakJointsOnDeath = true
         
-        -- Не восстанавливаем здоровье мгновенно, просто отключаем защиту
         if humanoid.Health > 100 then
             humanoid.Health = 100
         end
-        
-        print("[RBS] God Mode: OFF")
     end
 end
 
--- ===========================
--- AUTO FARM (ПЕРЕРАБОТАН)
--- ===========================
+-- ✅ AUTO FARM (с плавным полётом и быстрым сбором)
 local function StartAutoFarm()
     if farmLoop then return end
     state.autoFarm = true
 
-    SetCollision(false)
+    SetCollision(false)  -- отключаем коллизию
     AntiFallProtection()
 
     farmLoop = RunService.RenderStepped:Connect(function()
@@ -338,8 +311,6 @@ local function StartAutoFarm()
             return
         end
 
-        -- God Mode включается/выключается ТОЛЬКО своей кнопкой, автофарм его не трогает!
-
         UpdateCenterPosition()
         local coins = FindAllCoins()
 
@@ -349,7 +320,7 @@ local function StartAutoFarm()
                 if not state.autoFarm then break end
                 if coin.object and coin.object.Parent then
                     CollectCoin(coin)
-                    wait(CONFIG.COLLECTION_DELAY)  -- Задержка между монетами
+                    wait(CONFIG.COLLECTION_DELAY)  -- маленькая задержка между монетами
                 end
             end
             isCollecting = false
@@ -357,7 +328,7 @@ local function StartAutoFarm()
             if state.autoFarm and centerPosition and #FindAllCoins() == 0 then
                 wait(CONFIG.RETURN_DELAY)
                 local rootPart = GetRootPart()
-                if rootPart and (rootPart.Position - centerPosition).Magnitude > 15 then
+                if rootPart and centerPosition and (rootPart.Position - centerPosition).Magnitude > 15 then
                     SmoothTweenToPosition(centerPosition)
                 end
             end
@@ -372,7 +343,7 @@ local function StartAutoFarm()
         end
     end)
 
-    print("[RBS] Auto Farm запущен. Задержка между монетами: " .. CONFIG.COLLECTION_DELAY .. " сек")
+    print("[RBS] Auto Farm запущен (плавный полёт, задержка " .. CONFIG.COLLECTION_DELAY .. " сек)")
     UpdateUI()
 end
 
@@ -393,13 +364,13 @@ local function StopAutoFarm()
         noCollisionLoop = nil
     end
 
-    SetCollision(true)
+    SetCollision(true)  -- включаем коллизию обратно
     print("[RBS] Auto Farm остановлен")
     UpdateUI()
 end
 
 -- ===========================
--- GUI МЕНЮ (С ДВУМЯ НЕЗАВИСИМЫМИ КНОПКАМИ)
+-- GUI МЕНЮ
 -- ===========================
 local screenGui = nil
 local mainFrame = nil
@@ -430,13 +401,12 @@ local function CreateMenu()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 1, 0)
     title.BackgroundTransparency = 1
-    title.Text = "⚡ RBS - MM2 ULTIMATE v3.1"
+    title.Text = "✈️ RBS - MM2 FLY FARM v3.2"
     title.TextColor3 = Color3.fromRGB(255, 120, 120)
     title.TextSize = 14
     title.Font = Enum.Font.GothamBold
     title.Parent = titleBar
 
-    -- Кнопка Auto Farm
     local autoFarmBtn = Instance.new("TextButton")
     autoFarmBtn.Size = UDim2.new(0, 220, 0, 40)
     autoFarmBtn.Position = UDim2.new(0, 15, 0, 40)
@@ -447,7 +417,6 @@ local function CreateMenu()
     autoFarmBtn.Font = Enum.Font.GothamBold
     autoFarmBtn.Parent = mainFrame
 
-    -- Кнопка God Mode (полностью независимая)
     local godModeBtn = Instance.new("TextButton")
     godModeBtn.Size = UDim2.new(0, 220, 0, 40)
     godModeBtn.Position = UDim2.new(0, 15, 0, 90)
@@ -458,7 +427,6 @@ local function CreateMenu()
     godModeBtn.Font = Enum.Font.GothamBold
     godModeBtn.Parent = mainFrame
 
-    -- Обработчики
     autoFarmBtn.MouseButton1Click:Connect(function()
         if state.autoFarm then
             StopAutoFarm()
@@ -483,7 +451,6 @@ local function CreateMenu()
             godModeBtn.Text = "🟢 GOD MODE: ON"
             godModeBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
         end
-        UpdateUI()
     end)
 
     -- Перетаскивание окна
@@ -528,24 +495,17 @@ function UpdateUI()
     end
 end
 
--- ===========================
--- ЗАЩИТА ПРИ РЕСПАВНЕ
--- ===========================
+-- Защита при респавне
 LocalPlayer.CharacterAdded:Connect(function(character)
     wait(0.8)
-    
     if state.autoFarm then
         SetCollision(false)
         AntiFallProtection()
-        -- Не перезапускаем фарм, он сам подхватится
     end
-    
     if state.godMode then
         SetGodMode(true)
     end
-    
     UpdateCenterPosition()
-    print("[RBS] Character respawn, states restored")
 end)
 
 -- ===========================
@@ -553,13 +513,12 @@ end)
 -- ===========================
 print([[
 ╔═══════════════════════════════════════════╗
-║     RBS - MM2 ULTIMATE FARM v3.1         ║
+║     RBS - MM2 FLY FARM v3.2              ║
 ╠═══════════════════════════════════════════╣
-║  Исправления:                            ║
-║    ✓ God Mode теперь независимый         ║
-║    ✓ Задержка между монетами 0.4 сек     ║
-║    ✓ Исправлено отключение коллизии      ║
-║    ✓ Защита от падения под карту         ║
+║  ✓ Плавный полёт (Tween)                 ║
+║  ✓ Быстрый сбор монет                    ║
+║  ✓ Коллизия отключена                    ║
+║  ✓ God Mode независимый                  ║
 ╚═══════════════════════════════════════════╝
 ]])
 
