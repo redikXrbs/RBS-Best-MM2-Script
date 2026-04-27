@@ -317,80 +317,75 @@ local function UpdateCenterPosition()
 end
 
 -- AUTO FARM С МЕДЛЕННЫМ СБОРОМ
+-- AUTO FARM С МЕДЛЕННЫМ СБОРОМ (БЕЗ goto)
 local function StartAutoFarm()
     if farmActive then return end
     state.autoFarm = true
     farmActive = true
-    
+
     SetCollision(false)
-    
+
     print("[RBS] Auto Farm запущен (медленный режим, задержка " .. CONFIG.COLLECTION_DELAY .. " сек)")
     UpdateUI()
-    
+
     spawn(function()
         while state.autoFarm do
-            if not IsRoundActive() then
-                wait(1)
-                goto continue
-            end
+            -- Проверка активного раунда
+            local roundActive = IsRoundActive()
             
-            if state.godMode then
-                SetGodMode(true)
-            end
-            
-            UpdateCenterPosition()
-            
-            local coins = FindAllCoins()
-            
-            if #coins > 0 then
-                isCollecting = true
-                
-                for index, coin in ipairs(coins) do
-                    if not state.autoFarm then break end
-                    
-                    if coin.object and coin.object.Parent then
-                        local success = CollectCoin(coin)
-                        
-                        if success then
-                            print("[RBS] Монета собрана, ждем " .. CONFIG.COLLECTION_DELAY .. " сек...")
-                            
-                            -- ЗАДЕРЖКА 2 СЕКУНДЫ МЕЖДУ МОНЕТАМИ
-                            local delayStart = tick()
-                            while state.autoFarm and (tick() - delayStart) < CONFIG.COLLECTION_DELAY do
-                                wait(0.1)
+            if roundActive then
+                if state.godMode then
+                    SetGodMode(true)
+                end
+
+                UpdateCenterPosition()
+                local coins = FindAllCoins()
+
+                if #coins > 0 then
+                    isCollecting = true
+                    for _, coin in ipairs(coins) do
+                        if not state.autoFarm then break end
+                        if coin.object and coin.object.Parent then
+                            local success = CollectCoin(coin)
+                            if success then
+                                print("[RBS] Монета собрана, ждем " .. CONFIG.COLLECTION_DELAY .. " сек...")
+                                local delayStart = tick()
+                                while state.autoFarm and (tick() - delayStart) < CONFIG.COLLECTION_DELAY do
+                                    wait(0.1)
+                                end
                             end
                         end
                     end
-                end
-                
-                isCollecting = false
-                
-                -- Возврат в центр после всех монет
-                if state.autoFarm and centerPosition then
-                    local remainingCoins = #FindAllCoins()
-                    if remainingCoins == 0 then
-                        wait(CONFIG.RETURN_DELAY)
+                    isCollecting = false
+                    
+                    -- Возврат в центр
+                    if state.autoFarm and centerPosition then
+                        if #FindAllCoins() == 0 then
+                            wait(CONFIG.RETURN_DELAY)
+                            local rootPart = GetRootPart()
+                            if rootPart and (rootPart.Position - centerPosition).Magnitude > 15 then
+                                SmoothTweenToPosition(centerPosition)
+                            end
+                        end
+                    end
+                else
+                    -- Нет монет
+                    if centerPosition then
                         local rootPart = GetRootPart()
-                        if rootPart and centerPosition and (rootPart.Position - centerPosition).Magnitude > 15 then
+                        if rootPart and (rootPart.Position - centerPosition).Magnitude > 15 then
                             SmoothTweenToPosition(centerPosition)
                         end
                     end
+                    wait(0.5)
                 end
             else
-                -- Нет монет - медленно летим в центр
-                if centerPosition then
-                    local rootPart = GetRootPart()
-                    if rootPart and (rootPart.Position - centerPosition).Magnitude > 15 then
-                        SmoothTweenToPosition(centerPosition)
-                    end
-                end
-                wait(0.5)
+                -- Раунд не активен
+                wait(1)
             end
             
-            ::continue::
             wait(0.1)
         end
-        
+
         farmActive = false
         isCollecting = false
         SetCollision(true)
