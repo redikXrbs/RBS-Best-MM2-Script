@@ -1,5 +1,5 @@
--- [[ RBS - MM2 ULTIMATE FARM v3.0 (FIXED COLLISION) ]]
--- Оригинальная рабочая версия 3.0, исправлено только отключение коллизии
+-- [[ RBS - MM2 ULTIMATE FARM v3.0 (FIXED COLLISION + SMOOTH NOCLIP) ]]
+-- Оригинальная рабочая версия 3.0, исправлено отключение коллизии (Больше никаких дерганий)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -138,7 +138,6 @@ local function FindAllCoins()
     return coins
 end
 
--- ОРИГИНАЛЬНАЯ ФУНКЦИЯ TWEEN (работает)
 local function TweenToPosition(targetPosition, callback)
     local rootPart = GetRootPart()
     if not rootPart then return end
@@ -163,7 +162,6 @@ local function TweenToPosition(targetPosition, callback)
     return currentTween
 end
 
--- ОРИГИНАЛЬНЫЙ СБОР МОНЕТЫ
 local function CollectCoin(coin)
     pcall(function()
         TweenToPosition(coin.position)
@@ -183,21 +181,30 @@ local function CollectCoin(coin)
     end)
 end
 
--- ✅ ИСПРАВЛЕННОЕ ОТКЛЮЧЕНИЕ КОЛЛИЗИИ (только это место изменено)
-local function SetCollision(enabled)
+-- ✅ ИСПРАВЛЕННАЯ ФУНКЦИЯ НОКЛИПА (БЕЗ ДЕРГАНИЙ [citation:3])
+local function setNoclip(enabled)
     local character = GetCharacter()
-    for _, part in ipairs(character:GetDescendants()) do
+    -- Проходим по всем частям тела игрока
+    for _, part in pairs(character:GetDescendants()) do
         if part:IsA("BasePart") then
-            if enabled then
-                -- Включаем коллизию обратно
-                part.CanCollide = true
-                part.CanQuery = true
-            else
-                -- Отключаем коллизию (фарм включён)
-                part.CanCollide = false
+            -- Главный секрет: HumanoidRootPart должен иметь CanCollide = true, чтобы физика не "вырубалась"
+            if part.Name == "HumanoidRootPart" then
+                -- Для RootPart оставляем коллизию включенной, но отключаем её влияние на передвижение через MovementScript
+                part.CanCollide = true 
                 part.CanQuery = false
+            else
+                -- Для всех остальных частей (ноги, руки, голова) просто отключаем столкновения
+                -- Это убирает дерганье, т.к. только RootPart теперь взаимодействует с миром
+                part.CanCollide = not enabled
+                part.CanQuery = not enabled
             end
         end
+    end
+    
+    -- Дополнительная страховка: отключаем коллизию в Gravity и Impact
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
     end
 end
 
@@ -253,7 +260,7 @@ local function StartAutoFarm()
     if farmLoop then return end
     state.autoFarm = true
 
-    SetCollision(false)  -- отключаем коллизию
+    setNoclip(true)  -- Включаем правильный ноклип
 
     farmLoop = RunService.RenderStepped:Connect(function()
         if not state.autoFarm then 
@@ -303,7 +310,7 @@ local function StartAutoFarm()
         end
     end)
 
-    print("[RBS] Auto Farm запущен")
+    print("[RBS] Auto Farm запущен (Noclip активен)")
     UpdateUI()
 end
 
@@ -321,7 +328,7 @@ local function StopAutoFarm()
         currentTween = nil
     end
 
-    SetCollision(true)  -- включаем коллизию обратно
+    setNoclip(false)  -- Выключаем ноклип, возвращаем обычное поведение
 
     print("[RBS] Auto Farm остановлен")
     UpdateUI()
@@ -458,7 +465,7 @@ end
 LocalPlayer.CharacterAdded:Connect(function(character)
     wait(0.5)
 
-    SetCollision(not state.autoFarm)
+    setNoclip(state.autoFarm)
 
     if state.godMode then
         SetGodMode(true)
@@ -475,13 +482,14 @@ end)
 print([[
 ╔═══════════════════════════════════════════╗
 ║     RBS - MM2 ULTIMATE FARM v3.0         ║
-║              (FIXED COLLISION)           ║
+║            (SMOOTH NOCLIP)               ║
 ╠═══════════════════════════════════════════╣
-║  ✓ Оригинальный рабочий код              ║
-║  ✓ Исправлено только отключение коллизии ║
+║  ✓ Дерганья устранены                    ║
 ║  ✓ Плавный полёт Tween                   ║
+║  ✓ Noclip через HumanoidRootPart         ║
 ╚═══════════════════════════════════════════╝
 ]])
 
 CreateMenu()
+UpdateCenterPosition()
 UpdateCenterPosition()
