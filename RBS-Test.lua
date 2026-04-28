@@ -1,29 +1,84 @@
-local Noclip = nil
-local Clip = false
+-- ⚡ АБСОЛЮТНЫЙ NOCLIP (ПРОХОДИТ СКВОЗЬ ВСЁ) ⚡
+-- Позволяет проходить сквозь стены, предметы и проваливаться под карту.
 
-function noclip()
-    Clip = false
-    local function Nocl()
-        if Clip == false and game.Players.LocalPlayer.Character ~= nil then
-            for _, v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
-                if v:IsA('BasePart') then
-                    -- Убираем любое условие на имя, отключаем всё
-                    v.CanCollide = false
-                    v.CanQuery = false
-                end
-            end
+-- Переменная для включения/выключения (изначально ВКЛЮЧЕН)
+local noclipActive = true
+
+-- Главная функция, которая всё ломает
+local function enableAbsoluteNoclip()
+    local player = game.Players.LocalPlayer
+    local character = player.Character
+    if not character then return end
+
+    -- 1. Отключаем коллизию у всех частей тела
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.CanQuery = false
         end
-        wait(0.21) -- задержка для оптимизации
     end
-    if Noclip then Noclip:Disconnect() end
-    Noclip = game:GetService('RunService').Stepped:Connect(Nocl)
+
+    -- 2. [СЕКРЕТНЫЙ ИНГРЕДИЕНТ] Убираем "высоту бедер".
+    -- Это физически отрывает персонажа от земли, позволяя падать.
+    local humanoid = character:FindFirstChild("Humanoid")
+    if humanoid then
+        -- Запоминаем стандартную высоту, если нужно будет вернуть
+        if not humanoid:GetAttribute("OriginalHipHeight") then
+            humanoid:SetAttribute("OriginalHipHeight", humanoid.HipHeight)
+        end
+        humanoid.HipHeight = 0
+    end
 end
 
-function clip()
-    if Noclip then Noclip:Disconnect() end
-    Clip = true
-    -- Опционально: вернуть CanCollide = true для всех частей, но не обязательно
+-- Функция для возврата всего "как было" (на случай, если понадобится отключить)
+local function disableAbsoluteNoclip()
+    local player = game.Players.LocalPlayer
+    local character = player.Character
+    if not character then return end
+
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = true
+            part.CanQuery = true
+        end
+    end
+    
+    local humanoid = character:FindFirstChild("Humanoid")
+    if humanoid then
+        local originalHeight = humanoid:GetAttribute("OriginalHipHeight")
+        if originalHeight then
+            humanoid.HipHeight = originalHeight
+        end
+    end
 end
 
-noclip() -- включает режим прохода сквозь всё
+-- Запускаем бесконечный цикл, который будет следить за состоянием
+-- Используем RunService.Stepped для максимальной эффективности (срабатывает до просчета физики)
+local runService = game:GetService("RunService")
+local noclipConnection
 
+noclipConnection = runService.Stepped:Connect(function()
+    if noclipActive then
+        -- При каждом "шаге" физики принудительно применяем наши настройки
+        enableAbsoluteNoclip()
+    end
+end)
+
+-- Для удобства: нажмите 'P', чтобы включить/выключить NoClip
+local UserInputService = game:GetService("UserInputService")
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        noclipActive = not noclipActive
+        if noclipActive then
+            print("[NoClip] Активирован (можно ходить сквозь пол!)")
+            enableAbsoluteNoclip() -- Применяем сразу
+        else
+            print("[NoClip] Деактивирован")
+            disableAbsoluteNoclip()
+        end
+    end
+end)
+
+enableAbsoluteNoclip()
+print("[NoClip] Активирован! Нажми 'P' для вкл/выкл.")
