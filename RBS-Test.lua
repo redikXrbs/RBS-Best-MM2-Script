@@ -1,181 +1,123 @@
--- ╔════════════════════════════════════════════════════════════════════╗
--- ║              🔪 ТЕСТОВЫЙ NOCLIP | Murder Mystery 2 🔪              ║
--- ║                                                                    ║
--- ║  Управление:                                                       ║
--- ║    Нажми [N] - Включить/Выключить NoClip                          ║
--- ║    Нажми [V] - Показать статус в консоль                           ║
--- ║                                                                    ║
--- ║  Как работает:                                                     ║
--- ║    Активно проталкивает персонажа сквозь стены                    ║
--- ║    Работает даже когда обычный NoClip не помогает                  ║
--- ╚════════════════════════════════════════════════════════════════════╝
-
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local LocalPlayer = Players.LocalPlayer
+local Noclip = Instance.new("ScreenGui")
+local BG = Instance.new("Frame")
+local Title = Instance.new("TextLabel")
+local Toggle = Instance.new("TextButton")
+local StatusPF = Instance.new("TextLabel")
+local Status = Instance.new("TextLabel")
+local Plr = Players.LocalPlayer
+local Clipon = false
+local SteppedConnection = nil
 
--- ===========================
--- НАСТРОЙКИ (можно менять)
--- ===========================
-local CONFIG = {
-    TELEPORT_DISTANCE = 0.5,   -- На сколько студий телепортировать за шаг (0.3-0.8)
-    USE_CAMERA_DIRECTION = true, -- Использовать направление камеры (true) или клавиши WASD (false)
-    SHOW_DEBUG = true,          -- Показывать сообщения в консоль
-}
+Noclip.Name = "Noclip"
+Noclip.Parent = game.CoreGui
 
--- Состояние
-local noclipActive = false
+-- (GUI создаётся так же, опускаю для краткости, но можно оставить ваш код)
+BG.Name = "BG"
+BG.Parent = Noclip
+BG.BackgroundColor3 = Color3.new(0.0980392, 0.0980392, 0.0980392)
+BG.BorderColor3 = Color3.new(0.0588235, 0.0588235, 0.0588235)
+BG.BorderSizePixel = 2
+BG.Position = UDim2.new(0.149479166, 0, 0.82087779, 0)
+BG.Size = UDim2.new(0, 210, 0, 127)
+BG.Active = true
+BG.Draggable = true
 
--- ===========================
--- ФУНКЦИИ
--- ===========================
+Title.Name = "Title"
+Title.Parent = BG
+Title.BackgroundColor3 = Color3.new(0.266667, 0.00392157, 0.627451)
+Title.BorderColor3 = Color3.new(0.180392, 0, 0.431373)
+Title.BorderSizePixel = 2
+Title.Size = UDim2.new(0, 210, 0, 33)
+Title.Font = Enum.Font.Highway
+Title.Text = "Noclip"
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.FontSize = Enum.FontSize.Size32
+Title.TextSize = 30
+Title.TextStrokeColor3 = Color3.new(0.180392, 0, 0.431373)
+Title.TextStrokeTransparency = 0
 
-local function log(message)
-    if CONFIG.SHOW_DEBUG then
-        print("[NoClip Test] " .. message)
+Toggle.Parent = BG
+Toggle.BackgroundColor3 = Color3.new(0.266667, 0.00392157, 0.627451)
+Toggle.BorderColor3 = Color3.new(0.180392, 0, 0.431373)
+Toggle.BorderSizePixel = 2
+Toggle.Position = UDim2.new(0.152380958, 0, 0.374192119, 0)
+Toggle.Size = UDim2.new(0, 146, 0, 36)
+Toggle.Font = Enum.Font.Highway
+Toggle.FontSize = Enum.FontSize.Size28
+Toggle.Text = "Toggle"
+Toggle.TextColor3 = Color3.new(1, 1, 1)
+Toggle.TextSize = 25
+Toggle.TextStrokeColor3 = Color3.new(0.180392, 0, 0.431373)
+Toggle.TextStrokeTransparency = 0
+
+StatusPF.Name = "StatusPF"
+StatusPF.Parent = BG
+StatusPF.BackgroundColor3 = Color3.new(1, 1, 1)
+StatusPF.BackgroundTransparency = 1
+StatusPF.Position = UDim2.new(0.314285725, 0, 0.708661377, 0)
+StatusPF.Size = UDim2.new(0, 56, 0, 20)
+StatusPF.Font = Enum.Font.Highway
+StatusPF.FontSize = Enum.FontSize.Size24
+StatusPF.Text = "Status:"
+StatusPF.TextColor3 = Color3.new(1, 1, 1)
+StatusPF.TextSize = 20
+StatusPF.TextStrokeColor3 = Color3.new(0.333333, 0.333333, 0.333333)
+StatusPF.TextStrokeTransparency = 0
+StatusPF.TextWrapped = true
+
+Status.Name = "Status"
+Status.Parent = BG
+Status.BackgroundColor3 = Color3.new(1, 1, 1)
+Status.BackgroundTransparency = 1
+Status.Position = UDim2.new(0.580952346, 0, 0.708661377, 0)
+Status.Size = UDim2.new(0, 56, 0, 20)
+Status.Font = Enum.Font.Highway
+Status.FontSize = Enum.FontSize.Size14
+Status.Text = "off"
+Status.TextColor3 = Color3.new(0.666667, 0, 0)
+Status.TextScaled = true
+Status.TextSize = 14
+Status.TextStrokeColor3 = Color3.new(0.180392, 0, 0.431373)
+Status.TextWrapped = true
+Status.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Функция включения/выключения Noclip (без защиты от падения)
+local function applyNoclip()
+    local character = Plr.Character
+    if not character then return end
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.CanQuery = false   -- тоже отключаем для полного игнорирования
+        end
     end
 end
 
--- Получение направления движения
-local function getMoveDirection()
-    if CONFIG.USE_CAMERA_DIRECTION then
-        -- Движение в ту сторону, куда смотрит камера
-        local camera = workspace.CurrentCamera
-        if camera then
-            return camera.CFrame.LookVector
+Toggle.MouseButton1Click:connect(function()
+    if Status.Text == "off" then
+        Clipon = true
+        Status.Text = "on"
+        Status.TextColor3 = Color3.new(0,185,0)
+        -- Запускаем цикл Stepped, который будет постоянно отключать коллизию
+        if SteppedConnection then SteppedConnection:Disconnect() end
+        SteppedConnection = RunService.Stepped:Connect(function()
+            if Clipon then
+                applyNoclip()
+            end
+        end)
+    elseif Status.Text == "on" then
+        Clipon = false
+        Status.Text = "off"
+        Status.TextColor3 = Color3.new(170,0,0)
+        if SteppedConnection then
+            SteppedConnection:Disconnect()
+            SteppedConnection = nil
         end
-    else
-        -- Движение по клавишам WASD (более сложная реализация)
-        local moveVector = Vector3.new(
-            (UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.A) and 1 or 0),
-            0,
-            (UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0) - (UserInputService:IsKeyDown(Enum.KeyCode.S) and 1 or 0)
-        )
-        if moveVector.Magnitude > 0 then
-            return moveVector.Unit
-        end
-    end
-    return Vector3.new(0, 0, 0)
-end
-
--- Основной цикл NoClip
-local noclipConnection = nil
-
-local function startNoclip()
-    if noclipConnection then
-        noclipConnection:Disconnect()
-        noclipConnection = nil
-    end
-    
-    noclipConnection = RunService.Stepped:Connect(function()
-        if not noclipActive then return end
-        
-        local character = LocalPlayer.Character
-        if not character then return end
-        
-        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-        local humanoid = character:FindFirstChild("Humanoid")
-        
-        if not humanoidRootPart or not humanoid then return end
-        
-        -- Получаем направление движения
-        local moveDir = getMoveDirection()
-        
-        -- Если не используем направление камеры и нет нажатых клавиш — не двигаем
-        if not CONFIG.USE_CAMERA_DIRECTION and moveDir.Magnitude == 0 then
-            return
-        end
-        
-        -- Телепортируем персонажа в направлении движения
-        local newPosition = humanoidRootPart.Position + (moveDir * CONFIG.TELEPORT_DISTANCE)
-        humanoidRootPart.CFrame = CFrame.new(newPosition)
-        
-        -- Небольшая отладочная индикация (каждый 60 кадров примерно)
-        if CONFIG.SHOW_DEBUG and tick() % 2 < 0.1 then
-            log("NoClip активен, позиция: " .. tostring(newPosition))
-        end
-    end)
-    
-    log("NoClip цикл запущен")
-end
-
-local function stopNoclip()
-    if noclipConnection then
-        noclipConnection:Disconnect()
-        noclipConnection = nil
-        log("NoClip цикл остановлен")
-    end
-end
-
--- ===========================
--- УПРАВЛЕНИЕ
--- ===========================
-
--- Включение/выключение через клавишу N
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    
-    if input.KeyCode == Enum.KeyCode.N then
-        noclipActive = not noclipActive
-        
-        if noclipActive then
-            log("════════════════════════════════════════")
-            log("🔓 NOCLIP ВКЛЮЧЕН")
-            log("   Теперь ты проходишь сквозь стены!")
-            log("   Нажми [N] ещё раз чтобы выключить")
-            log("════════════════════════════════════════")
-            startNoclip()
-        else
-            log("════════════════════════════════════════")
-            log("🔒 NOCLIP ВЫКЛЮЧЕН")
-            log("   Стены снова твёрдые")
-            log("════════════════════════════════════════")
-            stopNoclip()
-        end
-    end
-    
-    -- Показать статус по клавише V
-    if input.KeyCode == Enum.KeyCode.V then
-        if noclipActive then
-            log("Статус: NOCLIP ВКЛЮЧЕН | Дистанция: " .. CONFIG.TELEPORT_DISTANCE)
-        else
-            log("Статус: NOCLIP ВЫКЛЮЧЕН | Нажми [N] для включения")
-        end
+        -- Необязательно: возвращать коллизию обратно, но можно оставить как есть
     end
 end)
-
--- ===========================
--- ЗАЩИТА ПРИ РЕСПАВНЕ
--- ===========================
-LocalPlayer.CharacterAdded:Connect(function()
-    log("Персонаж пересоздан, NoClip статус сохранён")
-    if noclipActive then
-        -- Небольшая задержка чтобы персонаж успел загрузиться
-        task.wait(0.5)
-        startNoclip()
-    end
-end)
-
--- ===========================
--- ЗАПУСК
--- ===========================
-print([[
-╔════════════════════════════════════════════════════════════════════╗
-║                    🔪 ТЕСТОВЫЙ NOCLIP v1.0 🔪                      ║
-╠════════════════════════════════════════════════════════════════════╣
-║                                                                    ║
-║   Управление:                                                      ║
-║     [N] - Включить/Выключить проход сквозь стены                  ║
-║     [V] - Показать текущий статус                                 ║
-║                                                                    ║
-║   Как это работает:                                                ║
-║     • Персонаж телепортируется в направлении камеры               ║
-║     • Это позволяет "продавливать" любые стены                    ║
-║     • Работает даже когда обычный NoClip бессилен                 ║
-║                                                                    ║
-╚════════════════════════════════════════════════════════════════════╝
-]])
-
-log("Скрипт загружен! Нажми [N] для активации NoClip")
 
