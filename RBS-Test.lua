@@ -1,6 +1,6 @@
 -- ╔═══════════════════════════════════════════════════════════════════════════════╗
 -- ║                    🔪 MURDER MYSTERY 2 | RBS ULTIMATE HUB 🔪                   ║
--- ║                        Версия 5.0 | С поддержкой абсолютного NoClip           ║
+-- ║                        Версия 6.0 | ПОЛНЫЙ КОНТРОЛЬ ПОЛЕТА                     ║
 -- ╚═══════════════════════════════════════════════════════════════════════════════╝
 
 -- [[ СИСТЕМА ЗАИМСТВОВАНА ИЗ ТОПОВЫХ ХАБОВ:
@@ -8,7 +8,7 @@
 --      Onyx Hub - Система телепортации и GUI
 --      Vertex Hub - Авто-фарм и механики боя
 --      OP GUI (U-ziii) - Продвинутая система NoClip
---      Moondiety - Анти-падение ]]
+--      Moondiety - Анти-падение и контроль полета ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -21,8 +21,8 @@ local LocalPlayer = Players.LocalPlayer
 -- ===========================
 local Config = {
     TweenSpeed = 65,           -- Скорость полета (высокая для плавности)
-    CollectionDelay = 0.05,    -- Задержка между монетами (почти мгновенно)
-    CenterOffset = -5,         -- Смещение под картой
+    CollectionDelay = 0.05,    -- Задержка между монетами
+    CenterOffset = -5,         -- Смещение под картой (-5 = под полом)
     AntiFallHeight = -15,      -- Высота для защиты от падения
 }
 
@@ -32,8 +32,10 @@ local Config = {
 local state = {
     AutoFarm = false,
     GodMode = false,
-    NoClip = false,            -- Новая независимая опция NoClip
+    NoClip = false,
     InfiniteJump = false,
+    isFlying = false,           -- Флаг летающего состояния
+    isInRound = false,          -- Флаг активного раунда
 }
 
 local centerPosition = nil
@@ -42,7 +44,8 @@ local farmLoop = nil
 local godModeConnection = nil
 local infiniteJumpConn = nil
 local antiFallConn = nil
-local noclipConnection = nil   -- Соединение для нового NoClip
+local flightConn = nil          -- Соединение для контроля полета
+local noclipConnection = nil
 
 -- ===========================
 -- ФУНКЦИИ ДЛЯ РАБОТЫ С ПЕРСОНАЖЕМ
@@ -72,7 +75,6 @@ local function applyAdvancedNoclip()
     local character = GetCharacter()
     if not character then return end
     
-    -- 1. Отключаем коллизию у всех частей тела
     for _, part in ipairs(character:GetDescendants()) do
         if part:IsA("BasePart") then
             part.CanCollide = false
@@ -80,7 +82,6 @@ local function applyAdvancedNoclip()
         end
     end
     
-    -- 2. Блокируем карабканье и отключаем гравитационные "залипания"
     local humanoid = character:FindFirstChild("Humanoid")
     if humanoid then
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
@@ -96,7 +97,7 @@ local function startNoclip()
     end
     
     noclipConnection = RunService.Stepped:Connect(function()
-        if state.NoClip or state.AutoFarm then  -- Включается, если активна любая из опций
+        if state.NoClip or (state.AutoFarm and state.isInRound) then
             applyAdvancedNoclip()
         end
     end)
@@ -107,12 +108,102 @@ local function stopNoclip()
         noclipConnection:Disconnect()
         noclipConnection = nil
     end
-    -- Не возвращаем коллизию, так как она может понадобиться для God Mode.
-    -- Но если игра требует восстановления, можно добавить, но в данном контексте это не нужно.
 end
 
 -- ===========================
--- GOD MODE (из Onyx Hub и Moondiety)
+-- ⭐ КОНТРОЛЬ ПОЛЕТА (Flying State)
+-- ===========================
+local function setFlightMode(enabled)
+    local character = GetCharacter()
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return end
+    
+    if enabled then
+        -- Включаем режим полета: отключаем гравитацию и заставляем парить
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
+        humanoid.PlatformStand = true   -- Ключевой момент для полета
+        state.isFlying = true
+    else
+        -- Возвращаем гравитацию
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, true)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
+        humanoid.PlatformStand = false
+        state.isFlying = false
+    end
+end
+
+-- Постоянный контроль полета во время Auto Farm
+local function startFlightControl()
+    if flightConn then flightConn:Disconnect() end
+    
+    flightConn = RunService.Stepped:Connect(function()
+        if state.AutoFarm and state.isInRound then
+            setFlightMode(true)
+        elseif state.AutoFarm and not state.isInRound then
+            -- Если в лобби, но AutoFarm включен, отключаем полет
+            setFlightMode(false)
+        end
+    end)
+end
+
+-- ===========================
+-- ОПРЕДЕЛЕНИЕ АКТИВНОГО РАУНДА (УЛУЧШЕННОЕ)
+-- ===========================
+local function checkRoundStatus()
+    local inRound = false
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char then
+                local tool = char:FindFirstChildOfClass("Tool")
+                if tool then
+                    local name = tool.Name:lower()
+                    if name:find("knife") or name:find("gun") then
+                        inRound = true
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Дополнительная проверка по Y-координате (лобби обычно высоко)
+    if inRound then
+        local char = LocalPlayer.Character
+        if char then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp and math.abs(hrp.Position.Y) > 400 then
+                inRound = false -- Это все еще лобби
+            end
+        end
+    end
+    
+    if state.isInRound ~= inRound then
+        state.isInRound = inRound
+        if inRound then
+            print("[RBS] Раунд начался!")
+            if state.AutoFarm then
+                setFlightMode(true)
+            end
+        else
+            print("[RBS] Раунд закончился (лобби)")
+            if state.AutoFarm then
+                setFlightMode(false)
+                -- Останавливаем текущий Tween, если есть
+                if currentTween then
+                    currentTween:Cancel()
+                    currentTween = nil
+                end
+            end
+        end
+    end
+end
+
+-- ===========================
+-- GOD MODE
 -- ===========================
 local function setGodMode(enabled)
     local char = GetCharacter()
@@ -150,7 +241,7 @@ local function setGodMode(enabled)
 end
 
 -- ===========================
--- INFINITE JUMP (из Eclipse Hub)
+-- INFINITE JUMP
 -- ===========================
 local function setInfiniteJump(enabled)
     local hum = GetCharacter():FindFirstChild("Humanoid")
@@ -171,44 +262,6 @@ local function setInfiniteJump(enabled)
             infiniteJumpConn = nil
         end
     end
-end
-
--- ===========================
--- АНТИ-ПАДЕНИЕ (из Solix Hub)
--- ===========================
-local function startAntiFall()
-    if antiFallConn then antiFallConn:Disconnect() end
-    
-    antiFallConn = RunService.RenderStepped:Connect(function()
-        if not state.AutoFarm then return end
-        
-        local char = GetCharacter()
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if hrp and hrp.Position.Y < Config.AntiFallHeight and centerPosition then
-            hrp.CFrame = CFrame.new(centerPosition)
-        end
-    end)
-end
-
--- ===========================
--- ОПРЕДЕЛЕНИЕ АКТИВНОГО РАУНДА
--- ===========================
-local function IsRoundActive()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local char = player.Character
-            if char then
-                local tool = char:FindFirstChildOfClass("Tool")
-                if tool then
-                    local name = tool.Name:lower()
-                    if name:find("knife") or name:find("gun") then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-    return false
 end
 
 -- ===========================
@@ -241,7 +294,7 @@ local function UpdateCenterPosition()
 end
 
 -- ===========================
--- ПОИСК МОНЕТ (оптимизировано)
+-- ПОИСК МОНЕТ
 -- ===========================
 local function FindAllCoins()
     local coins = {}
@@ -294,7 +347,7 @@ local function TweenToPosition(targetPos)
 end
 
 -- ===========================
--- СБОР МОНЕТЫ (мгновенный)
+-- СБОР МОНЕТЫ
 -- ===========================
 local function CollectCoin(coinObj)
     pcall(function()
@@ -317,14 +370,14 @@ local function CollectCoin(coinObj)
 end
 
 -- ===========================
--- AUTO FARM СИСТЕМА (обновленная)
+-- AUTO FARM СИСТЕМА (ОБНОВЛЕННАЯ)
 -- ===========================
 local function StartAutoFarm()
     if farmLoop then return end
     state.AutoFarm = true
     
-    startAntiFall()
-    startNoclip()  -- Запускаем продвинутый NoClip
+    startNoclip()
+    startFlightControl()
     
     farmLoop = RunService.RenderStepped:Connect(function()
         if not state.AutoFarm then
@@ -333,9 +386,17 @@ local function StartAutoFarm()
             return
         end
         
-        if not IsRoundActive() then
-            wait(1)
+        -- Обновляем статус раунда
+        checkRoundStatus()
+        
+        -- Если не в раунде - ничего не делаем
+        if not state.isInRound then
+            wait(0.5)
             return
+        end
+        
+        if state.GodMode then
+            setGodMode(true)
         end
         
         UpdateCenterPosition()
@@ -344,21 +405,21 @@ local function StartAutoFarm()
         
         if #coins > 0 then
             for _, coin in ipairs(coins) do
-                if not state.AutoFarm then break end
+                if not state.AutoFarm or not state.isInRound then break end
                 if coin.obj and coin.obj.Parent then
                     CollectCoin(coin.obj)
                     wait(Config.CollectionDelay)
                 end
             end
             
-            if state.AutoFarm and centerPosition then
+            if state.AutoFarm and state.isInRound and centerPosition then
                 local root = GetRootPart()
                 if root and #FindAllCoins() == 0 and (root.Position - centerPosition).Magnitude > 15 then
                     TweenToPosition(centerPosition)
                 end
             end
         else
-            if centerPosition then
+            if centerPosition and state.isInRound then
                 local root = GetRootPart()
                 if root and (root.Position - centerPosition).Magnitude > 15 then
                     TweenToPosition(centerPosition)
@@ -368,12 +429,13 @@ local function StartAutoFarm()
         end
     end)
     
-    print("[RBS] Auto Farm запущен (NoClip активен)")
+    print("[RBS] Auto Farm запущен (активен только в раунде)")
     UpdateUI()
 end
 
 local function StopAutoFarm()
     state.AutoFarm = false
+    state.isInRound = false
     
     if farmLoop then
         farmLoop:Disconnect()
@@ -385,16 +447,16 @@ local function StopAutoFarm()
         currentTween = nil
     end
     
-    if antiFallConn then
-        antiFallConn:Disconnect()
-        antiFallConn = nil
+    if flightConn then
+        flightConn:Disconnect()
+        flightConn = nil
     end
     
-    -- Если NoClip выключен вручную, отключаем его, иначе оставляем
+    setFlightMode(false)
+    
     if not state.NoClip then
         stopNoclip()
     else
-        -- Если NoClip включен отдельно, просто обновляем его работу
         startNoclip()
     end
     
@@ -403,7 +465,7 @@ local function StopAutoFarm()
 end
 
 -- ===========================
--- GUI МЕНЮ (обновленное)
+-- GUI МЕНЮ
 -- ===========================
 local screenGui = nil
 local mainFrame = nil
@@ -425,7 +487,6 @@ local function CreateMenu()
     mainFrame.BorderColor3 = Color3.fromRGB(255, 80, 80)
     mainFrame.Parent = screenGui
     
-    -- Заголовок
     local titleBar = Instance.new("Frame")
     titleBar.Size = UDim2.new(1, 0, 0, 30)
     titleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
@@ -441,7 +502,6 @@ local function CreateMenu()
     title.Font = Enum.Font.GothamBold
     title.Parent = titleBar
     
-    -- Кнопки
     local buttons = {
         {name = "Auto Farm", posY = 45, colorOn = Color3.fromRGB(60, 100, 60)},
         {name = "God Mode", posY = 85, colorOn = Color3.fromRGB(100, 60, 100)},
@@ -464,7 +524,6 @@ local function CreateMenu()
         toggleButtons[btnData.name] = btn
     end
     
-    -- Обработчики
     toggleButtons["Auto Farm"].MouseButton1Click:Connect(function()
         if state.AutoFarm then
             StopAutoFarm()
@@ -494,14 +553,14 @@ local function CreateMenu()
     toggleButtons["NoClip"].MouseButton1Click:Connect(function()
         if state.NoClip then
             state.NoClip = false
-            if not state.AutoFarm then  -- Если автофарм выключен, отключаем NoClip
+            if not state.AutoFarm then
                 stopNoclip()
             end
             toggleButtons["NoClip"].Text = "🔴 NOCLIP: OFF"
             toggleButtons["NoClip"].BackgroundColor3 = Color3.fromRGB(70, 70, 90)
         else
             state.NoClip = true
-            startNoclip()  -- Запускаем продвинутый NoClip
+            startNoclip()
             toggleButtons["NoClip"].Text = "🟢 NOCLIP: ON"
             toggleButtons["NoClip"].BackgroundColor3 = Color3.fromRGB(60, 80, 120)
         end
@@ -521,7 +580,6 @@ local function CreateMenu()
         end
     end)
     
-    -- Перетаскивание окна
     local dragging = false
     local dragStart = nil
     local framePos = nil
@@ -576,7 +634,10 @@ LocalPlayer.CharacterAdded:Connect(function()
     wait(0.8)
     if state.AutoFarm then
         startNoclip()
-        startAntiFall()
+        startFlightControl()
+        if state.isInRound then
+            setFlightMode(true)
+        end
     end
     if state.GodMode then
         setGodMode(true)
@@ -597,7 +658,7 @@ print([[
 ╔══════════════════════════════════════════════════════════════════╗
 ║           🔪 MURDER MYSTERY 2 | RBS ULTIMATE HUB 🔪              ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  ✨ Auto Farm      - Авто-сбор монет с плавным полетом           ║
+║  ✨ Auto Farm      - Работает ТОЛЬКО в раунде, режим полета      ║
 ║  ✨ God Mode       - Полное бессмертие                           ║
 ║  ✨ NoClip         - Абсолютный ноклип (сквозь стены и пол)      ║
 ║  ✨ Infinite Jump  - Бесконечные прыжки                          ║
@@ -607,3 +668,11 @@ print([[
 CreateMenu()
 UpdateCenterPosition()
 UpdateUI()
+
+-- Запускаем периодическую проверку раунда даже если AutoFarm выключен
+spawn(function()
+    while true do
+        checkRoundStatus()
+        wait(1)
+    end
+end)
