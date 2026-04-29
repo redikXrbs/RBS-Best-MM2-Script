@@ -1,5 +1,4 @@
--- ⚡ RBS - MM2 ULTIMATE FARM (Classic v3.0 Style GUI) ⚡
--- Рабочая система автофарма Zyn-ic + старый дизайн GUI
+-- ⚡ RBS - MM2 ULTIMATE FARM (Working Version) ⚡
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,23 +9,19 @@ local LocalPlayer = Players.LocalPlayer
 -- ===========================
 -- НАСТРОЙКИ
 -- ===========================
-local CONFIG = {
-    TWEEN_SPEED = 65,
-    COLLECT_DELAY = 0.05,
-    FLY_HEIGHT = -8,
-}
+local TWEEN_SPEED = 65
+local COLLECT_DELAY = 0.05
+local FLY_HEIGHT = -8
 
 -- ===========================
 -- СОСТОЯНИЯ
 -- ===========================
-local state = {
-    AutoFarm = false,
-    GodMode = false,
-    NoClip = false,
-}
+local AutoFarm = false
+local GodMode = false
+local NoClip = false
 
 -- ===========================
--- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+-- ПЕРЕМЕННЫЕ
 -- ===========================
 local currentTween = nil
 local farmLoop = nil
@@ -36,7 +31,7 @@ local lastCoinCheck = 0
 local coinCache = {}
 
 -- ===========================
--- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+-- ФУНКЦИИ
 -- ===========================
 local function GetCharacter()
     local char = LocalPlayer.Character
@@ -56,9 +51,6 @@ local function GetRootPart()
     return root
 end
 
--- ===========================
--- NOCLIP + ПОЛЁТ
--- ===========================
 local function SetNoclipFly(enabled)
     local char = GetCharacter()
     local hrp = GetRootPart()
@@ -79,7 +71,7 @@ local function SetNoclipFly(enabled)
         end
 
         hrp.Anchored = true
-        hrp.Position = Vector3.new(hrp.Position.X, CONFIG.FLY_HEIGHT, hrp.Position.Z)
+        hrp.Position = Vector3.new(hrp.Position.X, FLY_HEIGHT, hrp.Position.Z)
     else
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
         hum:SetStateEnabled(Enum.HumanoidStateType.Landed, true)
@@ -96,9 +88,6 @@ local function SetNoclipFly(enabled)
     end
 end
 
--- ===========================
--- ПОИСК БЛИЖАЙШЕЙ МОНЕТЫ (С КЭШЕМ)
--- ===========================
 local function GetNearestCoin()
     local now = tick()
     if now - lastCoinCheck < 0.1 and coinCache[1] then
@@ -115,17 +104,7 @@ local function GetNearestCoin()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Parent ~= GetCharacter() then
             local name = obj.Name:lower()
-            local isCoin = name:find("coin") or name:find("money") or 
-                          name:find("gold") or name:find("cash") or
-                          name:find("snow") or name:find("token") or
-                          name:find("beach") or name:find("ball") or
-                          name:find("candy") or name:find("present")
-
-            if not isCoin and obj.BrickColor then
-                local color = obj.BrickColor.Name:lower()
-                isCoin = color == "bright yellow" or color == "gold" or 
-                         color == "new yeller" or color == "pastel yellow"
-            end
+            local isCoin = name:find("coin") or name:find("money") or name:find("gold") or name:find("cash")
 
             if isCoin then
                 local dist = (rootPart.Position - obj.Position).Magnitude
@@ -144,9 +123,6 @@ local function GetNearestCoin()
     return nearest
 end
 
--- ===========================
--- ПЛАВНЫЙ TWEEN
--- ===========================
 local function FlyToPosition(targetPos)
     local root = GetRootPart()
     if not root then return end
@@ -157,7 +133,7 @@ local function FlyToPosition(targetPos)
     end
 
     local dist = (root.Position - targetPos).Magnitude
-    local duration = math.max(0.08, dist / CONFIG.TWEEN_SPEED)
+    local duration = math.max(0.08, dist / TWEEN_SPEED)
 
     local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
     local tween = TweenService:Create(root, tweenInfo, {CFrame = CFrame.new(targetPos)})
@@ -166,13 +142,9 @@ local function FlyToPosition(targetPos)
     return tween
 end
 
--- ===========================
--- СБОР МОНЕТЫ
--- ===========================
 local function CollectCoin(coin)
     if not coin or not coin.Parent then return false end
 
-    local success = false
     pcall(function()
         FlyToPosition(coin.Position)
         wait(0.03)
@@ -180,7 +152,6 @@ local function CollectCoin(coin)
         local click = coin:FindFirstChildWhichIsA("ClickDetector")
         if click then
             fireclickdetector(click)
-            success = true
         end
 
         local prompt = coin:FindFirstChildWhichIsA("ProximityPrompt")
@@ -188,26 +159,11 @@ local function CollectCoin(coin)
             prompt:InputHoldBegin()
             wait(0.03)
             prompt:InputHoldEnd()
-            success = true
-        end
-
-        if not success then
-            local root = GetRootPart()
-            if root then
-                local oldPos = root.Position
-                root.CFrame = coin.CFrame
-                wait(0.02)
-                root.CFrame = CFrame.new(oldPos)
-                success = true
-            end
         end
     end)
-    return success
+    return true
 end
 
--- ===========================
--- GOD MODE
--- ===========================
 local function SetGodMode(enabled)
     local char = GetCharacter()
     local hum = char:FindFirstChild("Humanoid")
@@ -236,16 +192,13 @@ local function SetGodMode(enabled)
     end
 end
 
--- ===========================
--- АВТОФАРМ
--- ===========================
 local function StartAutoFarm()
     if farmLoop then return end
-    state.AutoFarm = true
+    AutoFarm = true
     SetNoclipFly(true)
 
     farmLoop = RunService.Stepped:Connect(function()
-        if not state.AutoFarm then
+        if not AutoFarm then
             farmLoop:Disconnect()
             farmLoop = nil
             return
@@ -254,18 +207,17 @@ local function StartAutoFarm()
         local coin = GetNearestCoin()
         if coin then
             CollectCoin(coin)
-            wait(CONFIG.COLLECT_DELAY)
+            wait(COLLECT_DELAY)
         else
             wait(0.15)
         end
     end)
 
     print("[RBS] Auto Farm запущен")
-    UpdateUI()
 end
 
 local function StopAutoFarm()
-    state.AutoFarm = false
+    AutoFarm = false
 
     if farmLoop then
         farmLoop:Disconnect()
@@ -277,223 +229,132 @@ local function StopAutoFarm()
         currentTween = nil
     end
 
-    if not state.NoClip then
+    if not NoClip then
         SetNoclipFly(false)
     end
 
     print("[RBS] Auto Farm остановлен")
-    UpdateUI()
 end
 
 -- ===========================
--- GUI В СТИЛЕ СТАРОЙ ВЕРСИИ (v3.0)
+-- GUI МЕНЮ (УПРОЩЁННОЕ, ГАРАНТИРОВАННО РАБОТАЕТ)
 -- ===========================
-local screenGui = nil
-local mainFrame = nil
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "RBS_Farm"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = game:GetService("CoreGui")
 
-local function CreateMenu()
-    if screenGui then screenGui:Destroy() end
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 250, 0, 150)
+frame.Position = UDim2.new(0, 10, 0, 10)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+frame.BorderSizePixel = 2
+frame.BorderColor3 = Color3.fromRGB(255, 100, 100)
+frame.Parent = screenGui
 
-    screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "RBS_MM2_Ultimate"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = game:GetService("CoreGui")
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+title.Text = "RBS - MM2 FARM"
+title.TextColor3 = Color3.fromRGB(255, 120, 120)
+title.TextSize = 14
+title.Font = Enum.Font.GothamBold
+title.Parent = frame
 
-    mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 250, 0, 190)
-    mainFrame.Position = UDim2.new(0, 10, 0, 10)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-    mainFrame.BackgroundTransparency = 0.05
-    mainFrame.BorderSizePixel = 2
-    mainFrame.BorderColor3 = Color3.fromRGB(255, 100, 100)
-    mainFrame.Parent = screenGui
+local autoBtn = Instance.new("TextButton")
+autoBtn.Size = UDim2.new(0, 220, 0, 35)
+autoBtn.Position = UDim2.new(0, 15, 0, 40)
+autoBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+autoBtn.Text = "🔴 AUTO FARM: OFF"
+autoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+autoBtn.TextSize = 13
+autoBtn.Font = Enum.Font.GothamBold
+autoBtn.Parent = frame
 
-    -- Заголовок (как в старом скрипте)
-    local titleBar = Instance.new("Frame")
-    titleBar.Size = UDim2.new(1, 0, 0, 30)
-    titleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-    titleBar.BorderSizePixel = 0
-    titleBar.Parent = mainFrame
+local godBtn = Instance.new("TextButton")
+godBtn.Size = UDim2.new(0, 220, 0, 35)
+godBtn.Position = UDim2.new(0, 15, 0, 80)
+godBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+godBtn.Text = "🔴 GOD MODE: OFF"
+godBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+godBtn.TextSize = 13
+godBtn.Font = Enum.Font.GothamBold
+godBtn.Parent = frame
 
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 1, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "RBS - MM2 ULTIMATE"
-    title.TextColor3 = Color3.fromRGB(255, 120, 120)
-    title.TextSize = 14
-    title.Font = Enum.Font.GothamBold
-    title.Parent = titleBar
+local noclipBtn = Instance.new("TextButton")
+noclipBtn.Size = UDim2.new(0, 220, 0, 35)
+noclipBtn.Position = UDim2.new(0, 15, 0, 120)
+noclipBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+noclipBtn.Text = "🔴 NOCLIP: OFF"
+noclipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+noclipBtn.TextSize = 13
+noclipBtn.Font = Enum.Font.GothamBold
+noclipBtn.Parent = frame
 
-    -- Кнопка Auto Farm
-    local autoFarmBtn = Instance.new("TextButton")
-    autoFarmBtn.Size = UDim2.new(0, 220, 0, 35)
-    autoFarmBtn.Position = UDim2.new(0, 15, 0, 45)
-    autoFarmBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    autoFarmBtn.Text = "🔴 AUTO FARM: OFF"
-    autoFarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    autoFarmBtn.TextSize = 13
-    autoFarmBtn.Font = Enum.Font.GothamBold
-    autoFarmBtn.Parent = mainFrame
-
-    -- Кнопка God Mode
-    local godModeBtn = Instance.new("TextButton")
-    godModeBtn.Size = UDim2.new(0, 220, 0, 35)
-    godModeBtn.Position = UDim2.new(0, 15, 0, 85)
-    godModeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    godModeBtn.Text = "🔴 GOD MODE: OFF"
-    godModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    godModeBtn.TextSize = 13
-    godModeBtn.Font = Enum.Font.GothamBold
-    godModeBtn.Parent = mainFrame
-
-    -- Кнопка NoClip
-    local noclipBtn = Instance.new("TextButton")
-    noclipBtn.Size = UDim2.new(0, 220, 0, 35)
-    noclipBtn.Position = UDim2.new(0, 15, 0, 125)
-    noclipBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    noclipBtn.Text = "🔴 NOCLIP: OFF"
-    noclipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    noclipBtn.TextSize = 13
-    noclipBtn.Font = Enum.Font.GothamBold
-    noclipBtn.Parent = mainFrame
-
-    -- Кнопка сворачивания (как в старом скрипте)
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 220, 0, 25)
-    closeBtn.Position = UDim2.new(0, 15, 0, 165)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 50)
-    closeBtn.Text = "✖ HIDE MENU"
-    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeBtn.TextSize = 11
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.Parent = mainFrame
-
-    -- Обработчики
-    autoFarmBtn.MouseButton1Click:Connect(function()
-        if state.AutoFarm then
-            StopAutoFarm()
-            autoFarmBtn.Text = "🔴 AUTO FARM: OFF"
-            autoFarmBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-        else
-            StartAutoFarm()
-            autoFarmBtn.Text = "🟢 AUTO FARM: ON"
-            autoFarmBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
-        end
-    end)
-
-    godModeBtn.MouseButton1Click:Connect(function()
-        if state.GodMode then
-            state.GodMode = false
-            SetGodMode(false)
-            godModeBtn.Text = "🔴 GOD MODE: OFF"
-            godModeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-        else
-            state.GodMode = true
-            SetGodMode(true)
-            godModeBtn.Text = "🟢 GOD MODE: ON"
-            godModeBtn.BackgroundColor3 = Color3.fromRGB(100, 60, 100)
-        end
-        UpdateUI()
-    end)
-
-    noclipBtn.MouseButton1Click:Connect(function()
-        if state.NoClip then
-            state.NoClip = false
-            if not state.AutoFarm then
-                SetNoclipFly(false)
-            end
-            noclipBtn.Text = "🔴 NOCLIP: OFF"
-            noclipBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-        else
-            state.NoClip = true
-            SetNoclipFly(true)
-            noclipBtn.Text = "🟢 NOCLIP: ON"
-            noclipBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
-        end
-        UpdateUI()
-    end)
-
-    -- Сворачивание меню
-    local menuVisible = true
-    closeBtn.MouseButton1Click:Connect(function()
-        menuVisible = not menuVisible
-        mainFrame.Visible = menuVisible
-        closeBtn.Text = menuVisible and "✖ HIDE MENU" or "☰ SHOW MENU"
-        closeBtn.BackgroundColor3 = menuVisible and Color3.fromRGB(100, 50, 50) or Color3.fromRGB(50, 100, 50)
-    end)
-
-    -- Перетаскивание окна (как в старом скрипте)
-    local dragging = false
-    local dragStart = nil
-    local framePos = nil
-
-    titleBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            framePos = mainFrame.Position
-        end
-    end)
-
-    titleBar.InputEnded:Connect(function()
-        dragging = false
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            mainFrame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
-        end
-    end)
-end
-
-function UpdateUI()
-    if not mainFrame then return end
-
-    for _, btn in ipairs(mainFrame:GetDescendants()) do
-        if btn:IsA("TextButton") then
-            local text = btn.Text
-            if text:find("AUTO FARM") then
-                btn.Text = state.AutoFarm and "🟢 AUTO FARM: ON" or "🔴 AUTO FARM: OFF"
-                btn.BackgroundColor3 = state.AutoFarm and Color3.fromRGB(60, 100, 60) or Color3.fromRGB(80, 80, 100)
-            elseif text:find("GOD MODE") then
-                btn.Text = state.GodMode and "🟢 GOD MODE: ON" or "🔴 GOD MODE: OFF"
-                btn.BackgroundColor3 = state.GodMode and Color3.fromRGB(100, 60, 100) or Color3.fromRGB(80, 80, 100)
-            elseif text:find("NOCLIP") then
-                btn.Text = state.NoClip and "🟢 NOCLIP: ON" or "🔴 NOCLIP: OFF"
-                btn.BackgroundColor3 = state.NoClip and Color3.fromRGB(60, 80, 120) or Color3.fromRGB(80, 80, 100)
-            end
-        end
-    end
-end
-
--- Защита при респавне
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1)
-    if state.AutoFarm then
-        SetNoclipFly(true)
-    end
-    if state.GodMode then
-        SetGodMode(true)
-    end
-    if state.NoClip then
-        SetNoclipFly(true)
+autoBtn.MouseButton1Click:Connect(function()
+    if AutoFarm then
+        StopAutoFarm()
+        autoBtn.Text = "🔴 AUTO FARM: OFF"
+        autoBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    else
+        StartAutoFarm()
+        autoBtn.Text = "🟢 AUTO FARM: ON"
+        autoBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
     end
 end)
 
--- ===========================
--- ЗАПУСК
--- ===========================
-print([[
-╔═══════════════════════════════════════════╗
-║     RBS - MM2 ULTIMATE FARM (Classic GUI)║
-╠═══════════════════════════════════════════╣
-║  ✅ Тот же дизайн, что в v3.0            ║
-║  ✅ Рабочая система Zyn-ic Core          ║
-║  ✅ Плавный Tween + NoClip               ║
-║  ✅ Кнопка HIDE MENU для сворачивания    ║
-╚═══════════════════════════════════════════╝
-]])
+godBtn.MouseButton1Click:Connect(function()
+    if GodMode then
+        GodMode = false
+        SetGodMode(false)
+        godBtn.Text = "🔴 GOD MODE: OFF"
+        godBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    else
+        GodMode = true
+        SetGodMode(true)
+        godBtn.Text = "🟢 GOD MODE: ON"
+        godBtn.BackgroundColor3 = Color3.fromRGB(100, 60, 100)
+    end
+end)
 
-CreateMenu()
-UpdateUI()
+noclipBtn.MouseButton1Click:Connect(function()
+    if NoClip then
+        NoClip = false
+        if not AutoFarm then
+            SetNoclipFly(false)
+        end
+        noclipBtn.Text = "🔴 NOCLIP: OFF"
+        noclipBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    else
+        NoClip = true
+        SetNoclipFly(true)
+        noclipBtn.Text = "🟢 NOCLIP: ON"
+        noclipBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
+    end
+end)
+
+-- Перетаскивание
+local dragging = false
+local dragStart = nil
+local framePos = nil
+
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        framePos = frame.Position
+    end
+end)
+
+frame.InputEnded:Connect(function()
+    dragging = false
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+    end
+end)
+
+print("RBS Farm loaded - Click buttons to start")
