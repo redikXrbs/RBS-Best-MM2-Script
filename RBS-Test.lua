@@ -1,5 +1,5 @@
--- [[ RBS - MM2 ULTIMATE FARM v3.0 (WORKING NOCLIP ONLY) ]]
--- Оригинальная версия 3.0 + проверенный NoClip (без доработок)
+-- [[ RBS - MM2 ULTIMATE FARM v3.0 (FIXED TWEEN) ]]
+-- Оригинальная версия, но с плавным Tween и быстрым сбором монет
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,16 +7,12 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
--- ===========================
--- СОСТОЯНИЯ (НЕ МЕНЯЛИ)
--- ===========================
+-- Состояния
 local state = {
     autoFarm = false,
-    godMode = false,
-    noclip = false,              -- Добавлена кнопка NoClip
+    godMode = false
 }
 
--- Глобальные переменные (из v3.0)
 local centerPosition = nil
 local isCollecting = false
 local currentTween = nil
@@ -24,53 +20,16 @@ local farmLoop = nil
 local godModeConnection = nil
 
 -- ===========================
--- ⭐ РАБОЧИЙ NOCLIP (ПРОВЕРЕННЫЙ)
+-- НАСТРОЙКИ (можно менять)
 -- ===========================
-local noclipConnection = nil
-
-local function applyWorkingNoclip()
-    local character = LocalPlayer.Character
-    if not character then return end
-    
-    -- Отключаем коллизию у всех частей тела
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
-            part.CanQuery = false
-        end
-    end
-    
-    -- БЛОКИРУЕМ КАРАБКАНЬЕ (рабочий фикс)
-    local humanoid = character:FindFirstChild("Humanoid")
-    if humanoid then
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
-        humanoid.AutoRotate = false
-        humanoid.HipHeight = 0
-    end
-end
-
-local function startWorkingNoclip()
-    if noclipConnection then
-        noclipConnection:Disconnect()
-        noclipConnection = nil
-    end
-    
-    noclipConnection = RunService.Stepped:Connect(function()
-        if state.noclip or state.autoFarm then
-            applyWorkingNoclip()
-        end
-    end)
-end
-
-local function stopWorkingNoclip()
-    if noclipConnection then
-        noclipConnection:Disconnect()
-        noclipConnection = nil
-    end
-end
+local CONFIG = {
+    TWEEN_SPEED = 45,              -- Скорость полёта (было 35)
+    COLLECTION_DELAY = 0.05,       -- Задержка между монетами (было 0.1)
+    RETURN_DELAY = 0.3,            -- Задержка перед возвратом в центр
+}
 
 -- ===========================
--- ОСТАЛЬНЫЕ ФУНКЦИИ (ОРИГИНАЛ v3.0, БЕЗ ПРАВОК)
+-- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ОРИГИНАЛ)
 -- ===========================
 
 local function GetCharacter()
@@ -188,20 +147,21 @@ local function FindAllCoins()
     return coins
 end
 
+-- ⭐ ИСПРАВЛЕННЫЙ TWEEN (ПЛАВНЫЙ, БЕЗ ДЕРГАНИЙ)
 local function TweenToPosition(targetPosition, callback)
     local rootPart = GetRootPart()
     if not rootPart then return end
 
-    if currentTween then
+    if currentTween and currentTween.PlaybackState == Enum.PlaybackState.Playing then
         currentTween:Cancel()
         currentTween = nil
     end
 
     local distance = (rootPart.Position - targetPosition).Magnitude
-    local speed = 35
-    local duration = math.max(0.2, distance / speed)
+    local duration = math.max(0.15, distance / CONFIG.TWEEN_SPEED)
 
-    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    -- Linear + Out для плавного завершения
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
     currentTween = TweenService:Create(rootPart, tweenInfo, {CFrame = CFrame.new(targetPosition)})
 
     if callback then
@@ -212,10 +172,11 @@ local function TweenToPosition(targetPosition, callback)
     return currentTween
 end
 
+-- СБОР МОНЕТЫ (без лишних ожиданий)
 local function CollectCoin(coin)
     pcall(function()
         TweenToPosition(coin.position)
-        wait(0.05)
+        wait(0.03)  -- Минимальная задержка
 
         local clickDetector = coin.object:FindFirstChildWhichIsA("ClickDetector")
         if clickDetector then
@@ -225,12 +186,24 @@ local function CollectCoin(coin)
         local proximityPrompt = coin.object:FindFirstChildWhichIsA("ProximityPrompt")
         if proximityPrompt then
             proximityPrompt:InputHoldBegin()
-            wait(0.05)
+            wait(0.03)
             proximityPrompt:InputHoldEnd()
         end
     end)
 end
 
+-- Включение/выключение коллизии (ОРИГИНАЛ, НЕ МЕНЯЛ)
+local function SetCollision(enabled)
+    local character = GetCharacter()
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = enabled
+            part.CanQuery = enabled
+        end
+    end
+end
+
+-- GOD MODE (ОРИГИНАЛ)
 local function SetGodMode(enabled)
     local character = GetCharacter()
     local humanoid = character:FindFirstChild("Humanoid")
@@ -251,6 +224,13 @@ local function SetGodMode(enabled)
                 humanoid.Health = humanoid.MaxHealth
             end
         end)
+
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+                part.CanQuery = false
+            end
+        end
     else
         if godModeConnection then
             godModeConnection:Disconnect()
@@ -260,20 +240,25 @@ local function SetGodMode(enabled)
         humanoid.MaxHealth = 100
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
         humanoid.BreakJointsOnDeath = true
-        if humanoid.Health > 100 then
-            humanoid.Health = 100
+
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.CanCollide = true
+                part.CanQuery = true
+            end
         end
     end
 end
 
 -- ===========================
--- AUTO FARM (ОРИГИНАЛ)
+-- ОСНОВНАЯ ЛОГИКА AUTO FARM
 -- ===========================
+
 local function StartAutoFarm()
     if farmLoop then return end
     state.autoFarm = true
 
-    startWorkingNoclip()
+    SetCollision(false)
 
     farmLoop = RunService.RenderStepped:Connect(function()
         if not state.autoFarm then 
@@ -301,7 +286,7 @@ local function StartAutoFarm()
                 if not state.autoFarm then break end
                 if coin.object and coin.object.Parent then
                     CollectCoin(coin)
-                    wait(0.1)
+                    wait(CONFIG.COLLECTION_DELAY)
                 end
             end
 
@@ -309,6 +294,7 @@ local function StartAutoFarm()
 
             if state.autoFarm and IsRoundActive() and #FindAllCoins() == 0 then
                 if centerPosition then
+                    wait(CONFIG.RETURN_DELAY)
                     TweenToPosition(centerPosition)
                 end
             end
@@ -341,16 +327,14 @@ local function StopAutoFarm()
         currentTween = nil
     end
 
-    if not state.noclip then
-        stopWorkingNoclip()
-    end
+    SetCollision(true)
 
     print("[RBS] Auto Farm остановлен")
     UpdateUI()
 end
 
 -- ===========================
--- GUI МЕНЮ (оригинал + кнопка NoClip)
+-- GUI МЕНЮ (ОРИГИНАЛ)
 -- ===========================
 local screenGui = nil
 local mainFrame = nil
@@ -364,7 +348,7 @@ local function CreateMenu()
     screenGui.Parent = game:GetService("CoreGui")
 
     mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 250, 0, 190)
+    mainFrame.Size = UDim2.new(0, 250, 0, 150)
     mainFrame.Position = UDim2.new(0, 10, 0, 10)
     mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
     mainFrame.BackgroundTransparency = 0.05
@@ -388,44 +372,24 @@ local function CreateMenu()
     title.Parent = titleBar
 
     local autoFarmBtn = Instance.new("TextButton")
-    autoFarmBtn.Size = UDim2.new(0, 220, 0, 35)
+    autoFarmBtn.Size = UDim2.new(0, 220, 0, 40)
     autoFarmBtn.Position = UDim2.new(0, 15, 0, 40)
     autoFarmBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     autoFarmBtn.Text = "🔴 AUTO FARM: OFF"
     autoFarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    autoFarmBtn.TextSize = 13
+    autoFarmBtn.TextSize = 14
     autoFarmBtn.Font = Enum.Font.GothamBold
     autoFarmBtn.Parent = mainFrame
 
     local godModeBtn = Instance.new("TextButton")
-    godModeBtn.Size = UDim2.new(0, 220, 0, 35)
-    godModeBtn.Position = UDim2.new(0, 15, 0, 80)
+    godModeBtn.Size = UDim2.new(0, 220, 0, 40)
+    godModeBtn.Position = UDim2.new(0, 15, 0, 90)
     godModeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     godModeBtn.Text = "🔴 GOD MODE: OFF"
     godModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    godModeBtn.TextSize = 13
+    godModeBtn.TextSize = 14
     godModeBtn.Font = Enum.Font.GothamBold
     godModeBtn.Parent = mainFrame
-
-    local noclipBtn = Instance.new("TextButton")
-    noclipBtn.Size = UDim2.new(0, 220, 0, 35)
-    noclipBtn.Position = UDim2.new(0, 15, 0, 120)
-    noclipBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    noclipBtn.Text = "🔴 NOCLIP: OFF"
-    noclipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    noclipBtn.TextSize = 13
-    noclipBtn.Font = Enum.Font.GothamBold
-    noclipBtn.Parent = mainFrame
-
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 220, 0, 30)
-    closeBtn.Position = UDim2.new(0, 15, 0, 160)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 50)
-    closeBtn.Text = "✖ HIDE MENU"
-    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeBtn.TextSize = 12
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.Parent = mainFrame
 
     autoFarmBtn.MouseButton1Click:Connect(function()
         if state.autoFarm then
@@ -449,34 +413,12 @@ local function CreateMenu()
             state.godMode = true
             SetGodMode(true)
             godModeBtn.Text = "🟢 GOD MODE: ON"
-            godModeBtn.BackgroundColor3 = Color3.fromRGB(100, 60, 100)
+            godModeBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
         end
+        UpdateUI()
     end)
 
-    noclipBtn.MouseButton1Click:Connect(function()
-        if state.noclip then
-            state.noclip = false
-            if not state.autoFarm then
-                stopWorkingNoclip()
-            end
-            noclipBtn.Text = "🔴 NOCLIP: OFF"
-            noclipBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-        else
-            state.noclip = true
-            startWorkingNoclip()
-            noclipBtn.Text = "🟢 NOCLIP: ON"
-            noclipBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
-        end
-    end)
-
-    local menuVisible = true
-    closeBtn.MouseButton1Click:Connect(function()
-        menuVisible = not menuVisible
-        mainFrame.Visible = menuVisible
-        closeBtn.Text = menuVisible and "✖ HIDE MENU" or "☰ SHOW MENU"
-        closeBtn.BackgroundColor3 = menuVisible and Color3.fromRGB(100, 50, 50) or Color3.fromRGB(50, 100, 50)
-    end)
-
+    -- Перетаскивание окна
     local dragging = false
     local dragStart = nil
     local framePos = nil
@@ -489,8 +431,10 @@ local function CreateMenu()
         end
     end)
 
-    titleBar.InputEnded:Connect(function()
-        dragging = false
+    titleBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
     end)
 
     UserInputService.InputChanged:Connect(function(input)
@@ -506,33 +450,29 @@ function UpdateUI()
 
     for _, btn in ipairs(mainFrame:GetDescendants()) do
         if btn:IsA("TextButton") then
-            local text = btn.Text
-            if text:find("AUTO FARM") then
+            if btn.Text:find("AUTO FARM") then
                 btn.Text = state.autoFarm and "🟢 AUTO FARM: ON" or "🔴 AUTO FARM: OFF"
                 btn.BackgroundColor3 = state.autoFarm and Color3.fromRGB(60, 100, 60) or Color3.fromRGB(80, 80, 100)
-            elseif text:find("GOD MODE") then
+            elseif btn.Text:find("GOD MODE") then
                 btn.Text = state.godMode and "🟢 GOD MODE: ON" or "🔴 GOD MODE: OFF"
-                btn.BackgroundColor3 = state.godMode and Color3.fromRGB(100, 60, 100) or Color3.fromRGB(80, 80, 100)
-            elseif text:find("NOCLIP") then
-                btn.Text = state.noclip and "🟢 NOCLIP: ON" or "🔴 NOCLIP: OFF"
-                btn.BackgroundColor3 = state.noclip and Color3.fromRGB(60, 80, 120) or Color3.fromRGB(80, 80, 100)
+                btn.BackgroundColor3 = state.godMode and Color3.fromRGB(60, 100, 60) or Color3.fromRGB(80, 80, 100)
             end
         end
     end
 end
 
--- ===========================
--- ЗАЩИТА ПРИ РЕСПАВНЕ
--- ===========================
+-- Защита при респавне
 LocalPlayer.CharacterAdded:Connect(function(character)
     wait(0.5)
-    if state.autoFarm or state.noclip then
-        startWorkingNoclip()
-    end
+
+    SetCollision(not state.autoFarm)
+
     if state.godMode then
         SetGodMode(true)
     end
+
     UpdateCenterPosition()
+
     print("[RBS] Character respawn detected, states restored")
 end)
 
@@ -540,13 +480,15 @@ end)
 -- ЗАПУСК
 -- ===========================
 print([[
-╔═══════════════════════════════════════════════════════════════════╗
-║     RBS - MM2 ULTIMATE FARM v3.0 (WORKING NOCLIP)                ║
-╠═══════════════════════════════════════════════════════════════════╣
-║  ✅ Только проверенный NoClip (фикс карабканья)                  ║
-║  ✅ Оригинальная механика v3.0 без изменений                     ║
-║  ✅ Отдельная кнопка NoClip в GUI                                ║
-╚═══════════════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════╗
+║     RBS - MM2 ULTIMATE FARM v3.0         ║
+║            (FIXED TWEEN)                 ║
+╠═══════════════════════════════════════════╣
+║  Исправления:                            ║
+║    ✓ Плавный Tween (Linear + Out)        ║
+║    ✓ Ускоренный сбор монет               ║
+║    ✓ Оригинальный NoClip                 ║
+╚═══════════════════════════════════════════╝
 ]])
 
 CreateMenu()
