@@ -1,5 +1,5 @@
--- [[ RBS - MM2 ULTIMATE FARM v3.0 (FIXED NOCLIP) ]]
--- Оригинальная рабочая версия 3.0 с новой системой NoClip (Flying + Anchored)
+-- [[ RBS - MM2 ULTIMATE FARM v3.0 (WORKING NOCLIP ONLY) ]]
+-- Оригинальная версия 3.0 + проверенный NoClip (без доработок)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,121 +8,48 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 -- ===========================
--- НАСТРОЙКИ NOCLIP (можно менять)
--- ===========================
-local NOCLIP_CONFIG = {
-    ANCHOR_HEIGHT = -8,          -- Высота под картой (при полёте)
-    ANTI_FALL_Y = -100,          -- Защита от падения
-}
-
--- ===========================
--- СОСТОЯНИЯ
+-- СОСТОЯНИЯ (НЕ МЕНЯЛИ)
 -- ===========================
 local state = {
     autoFarm = false,
     godMode = false,
-    noclip = false,              -- Новая опция для ручного NoClip
+    noclip = false,              -- Добавлена кнопка NoClip
 }
 
--- Остальные глобальные переменные (из v3.0)
+-- Глобальные переменные (из v3.0)
 local centerPosition = nil
 local isCollecting = false
 local currentTween = nil
 local farmLoop = nil
 local godModeConnection = nil
 
--- Новые переменные для NoClip
+-- ===========================
+-- ⭐ РАБОЧИЙ NOCLIP (ПРОВЕРЕННЫЙ)
+-- ===========================
 local noclipConnection = nil
-local isAnchored = false
 
--- ===========================
--- ⭐ НОВАЯ СИСТЕМА NOCLIP (ПРОДВИНУТАЯ)
--- ===========================
-local function GetCharacter()
-    local char = LocalPlayer.Character
-    if not char or not char.Parent then
-        char = LocalPlayer.CharacterAdded:Wait()
+local function applyWorkingNoclip()
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    -- Отключаем коллизию у всех частей тела
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.CanQuery = false
+        end
     end
-    return char
-end
-
-local function GetRootPart()
-    local char = GetCharacter()
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then
-        char:WaitForChild("HumanoidRootPart")
-        root = char.HumanoidRootPart
-    end
-    return root
-end
-
-local function SetFlyingState(enabled)
-    local hrp = GetRootPart()
-    local char = GetCharacter()
-    local humanoid = char and char:FindFirstChild("Humanoid")
-    if not hrp or not humanoid then return end
-
-    if enabled then
-        -- Отключаем всё, что может помешать полёту
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
+    
+    -- БЛОКИРУЕМ КАРАБКАНЬЕ (рабочий фикс)
+    local humanoid = character:FindFirstChild("Humanoid")
+    if humanoid then
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
         humanoid.AutoRotate = false
-        
-        -- Принудительно переводим в состояние полёта
-        humanoid:ChangeState(Enum.HumanoidStateType.Flying)
-        
-        -- Отключаем коллизию у всех частей тела
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-                part.CanQuery = false
-            end
-        end
-        
-        -- Якорим RootPart на нужной высоте (чтобы не падал)
-        if NOCLIP_CONFIG.ANCHOR_HEIGHT then
-            hrp.Anchored = true
-            local targetPos = Vector3.new(hrp.Position.X, NOCLIP_CONFIG.ANCHOR_HEIGHT, hrp.Position.Z)
-            hrp.Position = targetPos
-            isAnchored = true
-        end
-    else
-        -- Возвращаем нормальное состояние
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Landed, true)
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, true)
-        humanoid.AutoRotate = true
-        humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        
-        if isAnchored then
-            hrp.Anchored = false
-            isAnchored = false
-        end
-        
-        -- Возвращаем коллизию (кроме RootPart, оставляем как было)
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                part.CanCollide = true
-                part.CanQuery = true
-            end
-        end
+        humanoid.HipHeight = 0
     end
 end
 
--- Защита от падения в бездну
-local function AntiVoid()
-    local hrp = GetRootPart()
-    if not hrp then return end
-    
-    if hrp.Position.Y < NOCLIP_CONFIG.ANTI_FALL_Y then
-        hrp.CFrame = CFrame.new(0, NOCLIP_CONFIG.ANCHOR_HEIGHT, 0)
-        print("[NoClip] Спасение от падения!")
-    end
-end
-
--- Запуск продвинутого NoClip
-local function startAdvancedNoclip()
+local function startWorkingNoclip()
     if noclipConnection then
         noclipConnection:Disconnect()
         noclipConnection = nil
@@ -130,27 +57,40 @@ local function startAdvancedNoclip()
     
     noclipConnection = RunService.Stepped:Connect(function()
         if state.noclip or state.autoFarm then
-            SetFlyingState(true)
-            AntiVoid()
-        elseif not state.noclip and not state.autoFarm then
-            SetFlyingState(false)
+            applyWorkingNoclip()
         end
     end)
 end
 
-local function stopAdvancedNoclip()
+local function stopWorkingNoclip()
     if noclipConnection then
         noclipConnection:Disconnect()
         noclipConnection = nil
     end
-    SetFlyingState(false)
 end
 
 -- ===========================
--- ОСТАЛЬНЫЕ ФУНКЦИИ (ОРИГИНАЛ v3.0)
+-- ОСТАЛЬНЫЕ ФУНКЦИИ (ОРИГИНАЛ v3.0, БЕЗ ПРАВОК)
 -- ===========================
 
--- Проверка: идет ли раунд
+local function GetCharacter()
+    local character = LocalPlayer.Character
+    if not character or not character.Parent then
+        character = LocalPlayer.CharacterAdded:Wait()
+    end
+    return character
+end
+
+local function GetRootPart()
+    local character = GetCharacter()
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then
+        character:WaitForChild("HumanoidRootPart")
+        rootPart = character.HumanoidRootPart
+    end
+    return rootPart
+end
+
 local function IsRoundActive()
     local players = game.Players:GetPlayers()
     local hasMurderer = false
@@ -194,7 +134,6 @@ local function IsRoundActive()
     return roundActive and not isInLobby
 end
 
--- Обновление центра карты
 local function UpdateCenterPosition()
     local map = workspace:FindFirstChild("Map")
     if map then
@@ -221,7 +160,6 @@ local function UpdateCenterPosition()
     end
 end
 
--- Поиск монет
 local function FindAllCoins()
     local coins = {}
     for _, obj in ipairs(workspace:GetDescendants()) do
@@ -250,7 +188,6 @@ local function FindAllCoins()
     return coins
 end
 
--- Tween движение (оригинал)
 local function TweenToPosition(targetPosition, callback)
     local rootPart = GetRootPart()
     if not rootPart then return end
@@ -275,7 +212,6 @@ local function TweenToPosition(targetPosition, callback)
     return currentTween
 end
 
--- Сбор монеты (оригинал)
 local function CollectCoin(coin)
     pcall(function()
         TweenToPosition(coin.position)
@@ -295,7 +231,6 @@ local function CollectCoin(coin)
     end)
 end
 
--- Режим бога (оригинал, обновлён для совместимости)
 local function SetGodMode(enabled)
     local character = GetCharacter()
     local humanoid = character:FindFirstChild("Humanoid")
@@ -332,14 +267,13 @@ local function SetGodMode(enabled)
 end
 
 -- ===========================
--- AUTO FARM (ОРИГИНАЛ, БЕЗ ПРАВОК КОЛЛИЗИИ)
+-- AUTO FARM (ОРИГИНАЛ)
 -- ===========================
 local function StartAutoFarm()
     if farmLoop then return end
     state.autoFarm = true
 
-    -- Включаем продвинутый NoClip (он сам обработает полёт)
-    startAdvancedNoclip()
+    startWorkingNoclip()
 
     farmLoop = RunService.RenderStepped:Connect(function()
         if not state.autoFarm then 
@@ -389,7 +323,7 @@ local function StartAutoFarm()
         end
     end)
 
-    print("[RBS] Auto Farm запущен (NoClip активен)")
+    print("[RBS] Auto Farm запущен")
     UpdateUI()
 end
 
@@ -407,9 +341,8 @@ local function StopAutoFarm()
         currentTween = nil
     end
 
-    -- Если NoClip не включён вручную — отключаем
     if not state.noclip then
-        stopAdvancedNoclip()
+        stopWorkingNoclip()
     end
 
     print("[RBS] Auto Farm остановлен")
@@ -417,7 +350,7 @@ local function StopAutoFarm()
 end
 
 -- ===========================
--- GUI МЕНЮ (ОРИГИНАЛЬНОЕ + НОВАЯ КНОПКА NOCLIP)
+-- GUI МЕНЮ (оригинал + кнопка NoClip)
 -- ===========================
 local screenGui = nil
 local mainFrame = nil
@@ -448,13 +381,12 @@ local function CreateMenu()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 1, 0)
     title.BackgroundTransparency = 1
-    title.Text = "RBS - MM2 ULTIMATE v3.0"
+    title.Text = "RBS - MM2 ULTIMATE"
     title.TextColor3 = Color3.fromRGB(255, 120, 120)
     title.TextSize = 14
     title.Font = Enum.Font.GothamBold
     title.Parent = titleBar
 
-    -- Кнопка Auto Farm
     local autoFarmBtn = Instance.new("TextButton")
     autoFarmBtn.Size = UDim2.new(0, 220, 0, 35)
     autoFarmBtn.Position = UDim2.new(0, 15, 0, 40)
@@ -465,7 +397,6 @@ local function CreateMenu()
     autoFarmBtn.Font = Enum.Font.GothamBold
     autoFarmBtn.Parent = mainFrame
 
-    -- Кнопка God Mode
     local godModeBtn = Instance.new("TextButton")
     godModeBtn.Size = UDim2.new(0, 220, 0, 35)
     godModeBtn.Position = UDim2.new(0, 15, 0, 80)
@@ -476,7 +407,6 @@ local function CreateMenu()
     godModeBtn.Font = Enum.Font.GothamBold
     godModeBtn.Parent = mainFrame
 
-    -- Новая кнопка NoClip (ручное управление)
     local noclipBtn = Instance.new("TextButton")
     noclipBtn.Size = UDim2.new(0, 220, 0, 35)
     noclipBtn.Position = UDim2.new(0, 15, 0, 120)
@@ -487,7 +417,6 @@ local function CreateMenu()
     noclipBtn.Font = Enum.Font.GothamBold
     noclipBtn.Parent = mainFrame
 
-    -- Кнопка закрытия
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 220, 0, 30)
     closeBtn.Position = UDim2.new(0, 15, 0, 160)
@@ -498,7 +427,6 @@ local function CreateMenu()
     closeBtn.Font = Enum.Font.GothamBold
     closeBtn.Parent = mainFrame
 
-    -- Обработчики
     autoFarmBtn.MouseButton1Click:Connect(function()
         if state.autoFarm then
             StopAutoFarm()
@@ -529,19 +457,18 @@ local function CreateMenu()
         if state.noclip then
             state.noclip = false
             if not state.autoFarm then
-                stopAdvancedNoclip()
+                stopWorkingNoclip()
             end
             noclipBtn.Text = "🔴 NOCLIP: OFF"
             noclipBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
         else
             state.noclip = true
-            startAdvancedNoclip()
+            startWorkingNoclip()
             noclipBtn.Text = "🟢 NOCLIP: ON"
             noclipBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
         end
     end)
 
-    -- Сворачивание меню
     local menuVisible = true
     closeBtn.MouseButton1Click:Connect(function()
         menuVisible = not menuVisible
@@ -550,7 +477,6 @@ local function CreateMenu()
         closeBtn.BackgroundColor3 = menuVisible and Color3.fromRGB(100, 50, 50) or Color3.fromRGB(50, 100, 50)
     end)
 
-    -- Перетаскивание окна
     local dragging = false
     local dragStart = nil
     local framePos = nil
@@ -563,10 +489,8 @@ local function CreateMenu()
         end
     end)
 
-    titleBar.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
+    titleBar.InputEnded:Connect(function()
+        dragging = false
     end)
 
     UserInputService.InputChanged:Connect(function(input)
@@ -602,15 +526,12 @@ end
 -- ===========================
 LocalPlayer.CharacterAdded:Connect(function(character)
     wait(0.5)
-
     if state.autoFarm or state.noclip then
-        startAdvancedNoclip()
+        startWorkingNoclip()
     end
-
     if state.godMode then
         SetGodMode(true)
     end
-
     UpdateCenterPosition()
     print("[RBS] Character respawn detected, states restored")
 end)
@@ -620,13 +541,11 @@ end)
 -- ===========================
 print([[
 ╔═══════════════════════════════════════════════════════════════════╗
-║     RBS - MM2 ULTIMATE FARM v3.0 (FIXED NOCLIP)                  ║
+║     RBS - MM2 ULTIMATE FARM v3.0 (WORKING NOCLIP)                ║
 ╠═══════════════════════════════════════════════════════════════════╣
-║  Что нового:                                                     ║
-║    ✅ Продвинутый NoClip (Flying + Anchored + AntiVoid)          ║
-║    ✅ Отдельная кнопка NoClip в GUI                              ║
-║    ✅ Плавный полёт без падений и дерганий                       ║
-║    ✅ Полностью совместим с оригинальной механикой v3.0          ║
+║  ✅ Только проверенный NoClip (фикс карабканья)                  ║
+║  ✅ Оригинальная механика v3.0 без изменений                     ║
+║  ✅ Отдельная кнопка NoClip в GUI                                ║
 ╚═══════════════════════════════════════════════════════════════════╝
 ]])
 
