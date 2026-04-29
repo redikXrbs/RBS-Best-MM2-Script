@@ -1,5 +1,5 @@
--- [[ RBS - MM2 ULTIMATE FARM v3.0 (FIXED TWEEN) ]]
--- Оригинальная версия, но с плавным Tween и быстрым сбором монет
+-- [[ RBS - MM2 ULTIMATE FARM v3.0 (NO CENTER, ONLY COINS) ]]
+-- Только сбор монет, без ожидания в центре карты
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -13,23 +13,21 @@ local state = {
     godMode = false
 }
 
-local centerPosition = nil
 local isCollecting = false
 local currentTween = nil
 local farmLoop = nil
 local godModeConnection = nil
 
 -- ===========================
--- НАСТРОЙКИ (можно менять)
+-- НАСТРОЙКИ
 -- ===========================
 local CONFIG = {
-    TWEEN_SPEED = 45,              -- Скорость полёта (было 35)
-    COLLECTION_DELAY = 0.05,       -- Задержка между монетами (было 0.1)
-    RETURN_DELAY = 0.3,            -- Задержка перед возвратом в центр
+    TWEEN_SPEED = 50,              -- Скорость полёта
+    COLLECTION_DELAY = 0.05,       -- Задержка между монетами
 }
 
 -- ===========================
--- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ОРИГИНАЛ)
+-- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 -- ===========================
 
 local function GetCharacter()
@@ -50,105 +48,60 @@ local function GetRootPart()
     return rootPart
 end
 
+-- Упрощённая проверка раунда (есть ли убийца или шериф)
 local function IsRoundActive()
-    local players = game.Players:GetPlayers()
-    local hasMurderer = false
-    local hasSheriff = false
-
-    for _, player in ipairs(players) do
-        local character = player.Character
-        if character then
-            local backpack = player.Backpack
-            if character:FindFirstChildOfClass("Tool") then
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local character = player.Character
+            if character then
                 local tool = character:FindFirstChildOfClass("Tool")
-                if tool and (tool.Name:lower():find("knife") or tool.Name:lower():find("gun")) then
-                    if player ~= LocalPlayer then
-                        hasMurderer = hasMurderer or tool.Name:lower():find("knife")
-                        hasSheriff = hasSheriff or tool.Name:lower():find("gun")
-                    end
-                end
-            end
-            if backpack then
-                for _, tool in ipairs(backpack:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        if tool.Name:lower():find("knife") then hasMurderer = true end
-                        if tool.Name:lower():find("gun") then hasSheriff = true end
+                if tool then
+                    local name = tool.Name:lower()
+                    if name:find("knife") or name:find("gun") then
+                        return true
                     end
                 end
             end
         end
     end
-
-    local roundActive = hasMurderer or hasSheriff
-
-    local character = LocalPlayer.Character
-    local isInLobby = false
-    if character then
-        local rootPart = character:FindFirstChild("HumanoidRootPart")
-        if rootPart and math.abs(rootPart.Position.Y) > 400 then
-            isInLobby = true
-        end
-    end
-
-    return roundActive and not isInLobby
+    return false
 end
 
-local function UpdateCenterPosition()
-    local map = workspace:FindFirstChild("Map")
-    if map then
-        local primaryPart = map:FindFirstChild("PrimaryPart") or map:FindFirstChild("Baseplate")
-        if primaryPart then
-            centerPosition = primaryPart.Position + Vector3.new(0, -10, 0)
-            return
-        end
-    end
-
-    local totalPos = Vector3.new(0, 0, 0)
-    local count = 0
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Size.Magnitude > 100 then
-            totalPos = totalPos + obj.Position
-            count = count + 1
-        end
-    end
-
-    if count > 0 then
-        centerPosition = (totalPos / count) + Vector3.new(0, -10, 0)
-    else
-        centerPosition = Vector3.new(0, 0, 0) + Vector3.new(0, -10, 0)
-    end
-end
-
+-- Поиск ВСЕХ монет (без сортировки по центру)
 local function FindAllCoins()
     local coins = {}
+    local rootPart = GetRootPart()
+    if not rootPart then return coins end
+    
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Parent ~= LocalPlayer.Character then
             local name = obj.Name:lower()
-            local isCoin = name:find("coin") or name:find("money") or name:find("gold")
-
+            local isCoin = name:find("coin") or name:find("money") or name:find("gold") or name:find("cash")
+            
             if not isCoin and obj.BrickColor then
                 isCoin = obj.BrickColor.Name == "Bright yellow" or obj.BrickColor.Name == "Gold"
             end
-
+            
             if isCoin then
                 table.insert(coins, {
                     object = obj,
                     position = obj.Position,
-                    distance = (GetRootPart().Position - obj.Position).Magnitude
+                    distance = (rootPart.Position - obj.Position).Magnitude
                 })
             end
         end
     end
-
+    
+    -- Сортируем от ближайшей к дальней
     table.sort(coins, function(a, b)
         return a.distance < b.distance
     end)
-
+    
     return coins
 end
 
--- ⭐ ИСПРАВЛЕННЫЙ TWEEN (ПЛАВНЫЙ, БЕЗ ДЕРГАНИЙ)
-local function TweenToPosition(targetPosition, callback)
+-- ПЛАВНЫЙ TWEEN
+local function TweenToPosition(targetPosition)
     local rootPart = GetRootPart()
     if not rootPart then return end
 
@@ -158,25 +111,19 @@ local function TweenToPosition(targetPosition, callback)
     end
 
     local distance = (rootPart.Position - targetPosition).Magnitude
-    local duration = math.max(0.15, distance / CONFIG.TWEEN_SPEED)
+    local duration = math.max(0.1, distance / CONFIG.TWEEN_SPEED)
 
-    -- Linear + Out для плавного завершения
     local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
     currentTween = TweenService:Create(rootPart, tweenInfo, {CFrame = CFrame.new(targetPosition)})
-
-    if callback then
-        currentTween.Completed:Connect(callback)
-    end
-
     currentTween:Play()
     return currentTween
 end
 
--- СБОР МОНЕТЫ (без лишних ожиданий)
+-- СБОР МОНЕТЫ
 local function CollectCoin(coin)
     pcall(function()
         TweenToPosition(coin.position)
-        wait(0.03)  -- Минимальная задержка
+        wait(0.03)
 
         local clickDetector = coin.object:FindFirstChildWhichIsA("ClickDetector")
         if clickDetector then
@@ -192,7 +139,7 @@ local function CollectCoin(coin)
     end)
 end
 
--- Включение/выключение коллизии (ОРИГИНАЛ, НЕ МЕНЯЛ)
+-- Включение/выключение коллизии
 local function SetCollision(enabled)
     local character = GetCharacter()
     for _, part in ipairs(character:GetDescendants()) do
@@ -203,7 +150,7 @@ local function SetCollision(enabled)
     end
 end
 
--- GOD MODE (ОРИГИНАЛ)
+-- GOD MODE
 local function SetGodMode(enabled)
     local character = GetCharacter()
     local humanoid = character:FindFirstChild("Humanoid")
@@ -251,9 +198,8 @@ local function SetGodMode(enabled)
 end
 
 -- ===========================
--- ОСНОВНАЯ ЛОГИКА AUTO FARM
+-- АВТОФАРМ (ТОЛЬКО МОНЕТЫ, БЕЗ ЦЕНТРА)
 -- ===========================
-
 local function StartAutoFarm()
     if farmLoop then return end
     state.autoFarm = true
@@ -268,7 +214,7 @@ local function StartAutoFarm()
         end
 
         if not IsRoundActive() then
-            wait(1)
+            wait(0.5)
             return
         end
 
@@ -276,12 +222,10 @@ local function StartAutoFarm()
             SetGodMode(true)
         end
 
-        UpdateCenterPosition()
         local coins = FindAllCoins()
 
         if #coins > 0 then
             isCollecting = true
-
             for _, coin in ipairs(coins) do
                 if not state.autoFarm then break end
                 if coin.object and coin.object.Parent then
@@ -289,27 +233,14 @@ local function StartAutoFarm()
                     wait(CONFIG.COLLECTION_DELAY)
                 end
             end
-
             isCollecting = false
-
-            if state.autoFarm and IsRoundActive() and #FindAllCoins() == 0 then
-                if centerPosition then
-                    wait(CONFIG.RETURN_DELAY)
-                    TweenToPosition(centerPosition)
-                end
-            end
         else
-            if not isCollecting and centerPosition then
-                local rootPart = GetRootPart()
-                if rootPart and (rootPart.Position - centerPosition).Magnitude > 15 then
-                    TweenToPosition(centerPosition)
-                end
-            end
+            -- Нет монет — просто ждём 0.2 секунды и проверяем снова
             wait(0.2)
         end
     end)
 
-    print("[RBS] Auto Farm запущен")
+    print("[RBS] Auto Farm запущен (только сбор монет)")
     UpdateUI()
 end
 
@@ -334,7 +265,7 @@ local function StopAutoFarm()
 end
 
 -- ===========================
--- GUI МЕНЮ (ОРИГИНАЛ)
+-- GUI МЕНЮ
 -- ===========================
 local screenGui = nil
 local mainFrame = nil
@@ -464,15 +395,10 @@ end
 -- Защита при респавне
 LocalPlayer.CharacterAdded:Connect(function(character)
     wait(0.5)
-
     SetCollision(not state.autoFarm)
-
     if state.godMode then
         SetGodMode(true)
     end
-
-    UpdateCenterPosition()
-
     print("[RBS] Character respawn detected, states restored")
 end)
 
@@ -482,14 +408,13 @@ end)
 print([[
 ╔═══════════════════════════════════════════╗
 ║     RBS - MM2 ULTIMATE FARM v3.0         ║
-║            (FIXED TWEEN)                 ║
+║           (ONLY COINS)                   ║
 ╠═══════════════════════════════════════════╣
-║  Исправления:                            ║
-║    ✓ Плавный Tween (Linear + Out)        ║
-║    ✓ Ускоренный сбор монет               ║
-║    ✓ Оригинальный NoClip                 ║
+║  Что изменилось:                         ║
+║    ✓ Убран центр карты                   ║
+║    ✓ Скрипт только собирает монеты       ║
+║    ✓ Ничего не ждёт, сразу летит за ними ║
 ╚═══════════════════════════════════════════╝
 ]])
 
 CreateMenu()
-UpdateCenterPosition()
