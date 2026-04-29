@@ -632,4 +632,3 @@ print([[
 
 CreateMenu()
 UpdateCenterPosition()
-]])
