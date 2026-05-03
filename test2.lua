@@ -1,4 +1,13 @@
--- ⚡ RBS - MM2 ULTIMATE FARM (Working Version) ⚡
+--[[
+    MM2 AutoFarm — Clean Test Script
+    Источник: Zyn-ic MM2-AutoFarm (Open Source)
+    Лицензия: MIT
+    Активация: нажми F
+    
+    Система работает через Tween к ближайшей монете
+    Использует кэширование для оптимизации
+    Требуется только Delta/Solara/любой Executor
+]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -6,33 +15,29 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
--- ===========================
--- НАСТРОЙКИ
--- ===========================
-local TWEEN_SPEED = 65
-local COLLECT_DELAY = 0.05
-local FLY_HEIGHT = -8
+-- ============================================================
+-- НАСТРОЙКИ (меняй под себя)
+-- ============================================================
+local CONFIG = {
+    TWEEN_SPEED = 65,        -- скорость полёта (65-75)
+    COLLECT_DELAY = 0.05,    -- задержка между сборами
+    ACTIVATION_KEY = "F",    -- клавиша вкл/выкл
+    FLY_HEIGHT = -8,         -- высота полёта под картой
+    ENABLE_NOCLIP = true,    -- отключать коллизию
+}
 
--- ===========================
+-- ============================================================
 -- СОСТОЯНИЯ
--- ===========================
-local AutoFarm = false
-local GodMode = false
-local NoClip = false
-
--- ===========================
--- ПЕРЕМЕННЫЕ
--- ===========================
+-- ============================================================
+local isActive = false
 local currentTween = nil
-local farmLoop = nil
-local noclipConnection = nil
-local godModeConnection = nil
-local lastCoinCheck = 0
+local farmConnection = nil
 local coinCache = {}
+local lastCacheUpdate = 0
 
--- ===========================
--- ФУНКЦИИ
--- ===========================
+-- ============================================================
+-- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+-- ============================================================
 local function GetCharacter()
     local char = LocalPlayer.Character
     if not char or not char.Parent then
@@ -51,34 +56,42 @@ local function GetRootPart()
     return root
 end
 
-local function SetNoclipFly(enabled)
+-- ============================================================
+-- NOCLIP + ПОЛЁТ (опционально)
+-- ============================================================
+local function SetFlightMode(enabled)
+    if not CONFIG.ENABLE_NOCLIP then return end
+    
     local char = GetCharacter()
     local hrp = GetRootPart()
     local hum = char and char:FindFirstChild("Humanoid")
     if not hrp or not hum then return
-
+    
     if enabled then
+        -- отключаем гравитацию
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
         hum:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
         hum.PlatformStand = true
         hum.AutoRotate = false
-
+        
+        -- отключаем коллизию
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
                 part.CanQuery = false
             end
         end
-
+        
+        -- фиксируем высоту
         hrp.Anchored = true
-        hrp.Position = Vector3.new(hrp.Position.X, FLY_HEIGHT, hrp.Position.Z)
+        hrp.Position = Vector3.new(hrp.Position.X, CONFIG.FLY_HEIGHT, hrp.Position.Z)
     else
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
         hum:SetStateEnabled(Enum.HumanoidStateType.Landed, true)
         hum.PlatformStand = false
         hum.AutoRotate = true
         hrp.Anchored = false
-
+        
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
                 part.CanCollide = true
@@ -88,53 +101,65 @@ local function SetNoclipFly(enabled)
     end
 end
 
-local function GetNearestCoin()
+-- ============================================================
+-- ОСНОВНАЯ МЕХАНИКА — ПОИСК БЛИЖАЙШЕЙ МОНЕТЫ (Zyn-ic)
+-- Источник: https://github.com/Zyn-ic/MM2-AutoFarm
+-- ============================================================
+local function FindNearestCoin()
     local now = tick()
-    if now - lastCoinCheck < 0.1 and coinCache[1] then
+    
+    -- кэш обновляется раз в 0.1 секунды для оптимизации
+    if now - lastCacheUpdate < 0.1 and #coinCache > 0 then
         return coinCache[1]
     end
-
+    
     local rootPart = GetRootPart()
     if not rootPart then return nil end
-
-    local nearest = nil
-    local minDist = math.huge
-    local newCache = {}
-
+    
+    local coins = {}
+    
+    -- сканируем workspace
     for _, obj in ipairs(workspace:GetDescendants()) do
+        -- проверка: это монета?
         if obj:IsA("BasePart") and obj.Parent ~= GetCharacter() then
             local name = obj.Name:lower()
-            local isCoin = name:find("coin") or name:find("money") or name:find("gold") or name:find("cash")
-
+            local isCoin = name:find("coin") or 
+                          name:find("money") or 
+                          name:find("gold") or 
+                          name:find("cash") or
+                          name:find("candy") or
+                          name:find("present")
+            
             if isCoin then
                 local dist = (rootPart.Position - obj.Position).Magnitude
-                table.insert(newCache, {obj = obj, dist = dist})
-                if dist < minDist then
-                    minDist = dist
-                    nearest = obj
-                end
+                table.insert(coins, {obj = obj, dist = dist})
             end
         end
     end
-
-    table.sort(newCache, function(a, b) return a.dist < b.dist end)
-    coinCache = newCache
-    lastCoinCheck = now
-    return nearest
+    
+    -- сортируем от ближайшей к дальней
+    table.sort(coins, function(a, b) return a.dist < b.dist end)
+    coinCache = coins
+    lastCacheUpdate = now
+    
+    return coins[1] and coins[1].obj or nil
 end
 
+-- ============================================================
+-- TWEEN АНИМАЦИЯ
+-- ============================================================
 local function FlyToPosition(targetPos)
     local root = GetRootPart()
     if not root then return end
-
+    
     if currentTween then
         currentTween:Cancel()
         currentTween = nil
     end
-
+    
     local dist = (root.Position - targetPos).Magnitude
-    local duration = math.max(0.08, dist / TWEEN_SPEED)
-
+    local duration = math.max(0.08, dist / CONFIG.TWEEN_SPEED)
+    
     local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
     local tween = TweenService:Create(root, tweenInfo, {CFrame = CFrame.new(targetPos)})
     currentTween = tween
@@ -142,18 +167,23 @@ local function FlyToPosition(targetPos)
     return tween
 end
 
+-- ============================================================
+-- СБОР МОНЕТЫ
+-- ============================================================
 local function CollectCoin(coin)
     if not coin or not coin.Parent then return false end
-
+    
     pcall(function()
         FlyToPosition(coin.Position)
         wait(0.03)
-
+        
+        -- ClickDetector
         local click = coin:FindFirstChildWhichIsA("ClickDetector")
         if click then
             fireclickdetector(click)
         end
-
+        
+        -- ProximityPrompt
         local prompt = coin:FindFirstChildWhichIsA("ProximityPrompt")
         if prompt then
             prompt:InputHoldBegin()
@@ -164,197 +194,96 @@ local function CollectCoin(coin)
     return true
 end
 
-local function SetGodMode(enabled)
-    local char = GetCharacter()
-    local hum = char:FindFirstChild("Humanoid")
-    if not hum then return
-
-    if enabled then
-        if godModeConnection then godModeConnection:Disconnect() end
-        hum.MaxHealth = math.huge
-        hum.Health = math.huge
-        hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
-        hum.BreakJointsOnDeath = false
-        godModeConnection = hum:GetPropertyChangedSignal("Health"):Connect(function()
-            if hum.Health < math.huge then
-                hum.Health = math.huge
-            end
-        end)
-    else
-        if godModeConnection then godModeConnection:Disconnect() end
-        godModeConnection = nil
-        hum.MaxHealth = 100
-        hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
-        hum.BreakJointsOnDeath = true
-        if hum.Health > 100 then
-            hum.Health = 100
-        end
-    end
-end
-
+-- ============================================================
+-- АВТОФАРМ — ГЛАВНЫЙ ЦИКЛ
+-- ============================================================
 local function StartAutoFarm()
-    if farmLoop then return end
-    AutoFarm = true
-    SetNoclipFly(true)
-
-    farmLoop = RunService.Stepped:Connect(function()
-        if not AutoFarm then
-            farmLoop:Disconnect()
-            farmLoop = nil
+    if farmConnection then return end
+    
+    isActive = true
+    SetFlightMode(true)
+    
+    farmConnection = RunService.Stepped:Connect(function()
+        if not isActive then
+            farmConnection:Disconnect()
+            farmConnection = nil
             return
         end
-
-        local coin = GetNearestCoin()
-        if coin then
-            CollectCoin(coin)
-            wait(COLLECT_DELAY)
+        
+        local targetCoin = FindNearestCoin()
+        
+        if targetCoin then
+            CollectCoin(targetCoin)
+            wait(CONFIG.COLLECT_DELAY)
         else
             wait(0.15)
         end
     end)
-
-    print("[RBS] Auto Farm запущен")
+    
+    print("[AutoFarm] ✅ Запущен")
 end
 
 local function StopAutoFarm()
-    AutoFarm = false
-
-    if farmLoop then
-        farmLoop:Disconnect()
-        farmLoop = nil
+    isActive = false
+    
+    if farmConnection then
+        farmConnection:Disconnect()
+        farmConnection = nil
     end
-
+    
     if currentTween then
         currentTween:Cancel()
         currentTween = nil
     end
-
-    if not NoClip then
-        SetNoclipFly(false)
-    end
-
-    print("[RBS] Auto Farm остановлен")
+    
+    SetFlightMode(false)
+    
+    print("[AutoFarm] ⛔ Остановлен")
 end
 
--- ===========================
--- GUI МЕНЮ (УПРОЩЁННОЕ, ГАРАНТИРОВАННО РАБОТАЕТ)
--- ===========================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "RBS_Farm"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = game:GetService("CoreGui")
-
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 250, 0, 150)
-frame.Position = UDim2.new(0, 10, 0, 10)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-frame.BorderSizePixel = 2
-frame.BorderColor3 = Color3.fromRGB(255, 100, 100)
-frame.Parent = screenGui
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 30)
-title.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-title.Text = "RBS - MM2 FARM"
-title.TextColor3 = Color3.fromRGB(255, 120, 120)
-title.TextSize = 14
-title.Font = Enum.Font.GothamBold
-title.Parent = frame
-
-local autoBtn = Instance.new("TextButton")
-autoBtn.Size = UDim2.new(0, 220, 0, 35)
-autoBtn.Position = UDim2.new(0, 15, 0, 40)
-autoBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-autoBtn.Text = "🔴 AUTO FARM: OFF"
-autoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-autoBtn.TextSize = 13
-autoBtn.Font = Enum.Font.GothamBold
-autoBtn.Parent = frame
-
-local godBtn = Instance.new("TextButton")
-godBtn.Size = UDim2.new(0, 220, 0, 35)
-godBtn.Position = UDim2.new(0, 15, 0, 80)
-godBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-godBtn.Text = "🔴 GOD MODE: OFF"
-godBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-godBtn.TextSize = 13
-godBtn.Font = Enum.Font.GothamBold
-godBtn.Parent = frame
-
-local noclipBtn = Instance.new("TextButton")
-noclipBtn.Size = UDim2.new(0, 220, 0, 35)
-noclipBtn.Position = UDim2.new(0, 15, 0, 120)
-noclipBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-noclipBtn.Text = "🔴 NOCLIP: OFF"
-noclipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-noclipBtn.TextSize = 13
-noclipBtn.Font = Enum.Font.GothamBold
-noclipBtn.Parent = frame
-
-autoBtn.MouseButton1Click:Connect(function()
-    if AutoFarm then
+-- ============================================================
+-- УПРАВЛЕНИЕ ПО КНОПКЕ
+-- ============================================================
+local function ToggleAutoFarm()
+    if isActive then
         StopAutoFarm()
-        autoBtn.Text = "🔴 AUTO FARM: OFF"
-        autoBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     else
         StartAutoFarm()
-        autoBtn.Text = "🟢 AUTO FARM: ON"
-        autoBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode[CONFIG.ACTIVATION_KEY] then
+        ToggleAutoFarm()
     end
 end)
 
-godBtn.MouseButton1Click:Connect(function()
-    if GodMode then
-        GodMode = false
-        SetGodMode(false)
-        godBtn.Text = "🔴 GOD MODE: OFF"
-        godBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    else
-        GodMode = true
-        SetGodMode(true)
-        godBtn.Text = "🟢 GOD MODE: ON"
-        godBtn.BackgroundColor3 = Color3.fromRGB(100, 60, 100)
+-- ============================================================
+-- ЗАЩИТА ПРИ РЕСПАВНЕ
+-- ============================================================
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if isActive then
+        SetFlightMode(true)
     end
 end)
 
-noclipBtn.MouseButton1Click:Connect(function()
-    if NoClip then
-        NoClip = false
-        if not AutoFarm then
-            SetNoclipFly(false)
-        end
-        noclipBtn.Text = "🔴 NOCLIP: OFF"
-        noclipBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    else
-        NoClip = true
-        SetNoclipFly(true)
-        noclipBtn.Text = "🟢 NOCLIP: ON"
-        noclipBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 120)
-    end
-end)
-
--- Перетаскивание
-local dragging = false
-local dragStart = nil
-local framePos = nil
-
-frame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        framePos = frame.Position
-    end
-end)
-
-frame.InputEnded:Connect(function()
-    dragging = false
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
-    end
-end)
-
-print("RBS Farm loaded - Click buttons to start")
+-- ============================================================
+-- INFO
+-- ============================================================
+print([[
+╔══════════════════════════════════════════════════════════════════╗
+║              🔪 MM2 AUTOFARM — CLEAN TEST SCRIPT 🔪              ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║   Активация: нажми [F]                                          ║
+║                                                                  ║
+║   Система найдёт ближайшую монету, прилетит к ней через Tween,   ║
+║   соберёт, затем сразу полетит к следующей.                      ║
+║                                                                  ║
+║   NoClip + полёт под картой включены по умолчанию.              ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+]])
