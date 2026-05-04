@@ -215,7 +215,7 @@ end
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "TestFarmGUI"
 screenGui.ResetOnSpawn = false
-screenGui.Parent = game:GetService("CoreGui")
+screenGui.Parent = game:GetService("Players").LocalPlayer.PlayerGui
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 200, 0, 120)
