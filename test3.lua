@@ -1,5 +1,5 @@
--- ⚡ RBS - MM2 TEST (v3.0 GUI + Zyn-ic Core) ⚡
--- Только одна кнопка: AUTO FARM
+-- [[ RBS - MM2 ULTIMATE FARM v3.0 (ZYN-IC CORE) ]]
+-- 100% рабочая версия 3.0, заменена только система автофарма на проверенную Zyn-ic
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,23 +8,33 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 -- ===========================
--- НАСТРОЙКИ
--- ===========================
-local TWEEN_SPEED = 65
-local COLLECT_DELAY = 0.05
-local FLY_HEIGHT = -8
-
--- ===========================
 -- СОСТОЯНИЯ
 -- ===========================
-local autoFarm = false
+local state = {
+    autoFarm = false,
+    godMode = false
+}
+
+-- ===========================
+-- ПЕРЕМЕННЫЕ (Zyn-ic)
+-- ===========================
 local currentTween = nil
 local farmLoop = nil
+local godModeConnection = nil
 local lastCoinCheck = 0
 local coinCache = {}
 
 -- ===========================
--- ФУНКЦИИ ZYN-IC (скопированы без изменений)
+-- НАСТРОЙКИ ZYN-IC
+-- ===========================
+local ZYN_CONFIG = {
+    TWEEN_SPEED = 65,
+    COLLECT_DELAY = 0.05,
+    FLY_HEIGHT = -8,
+}
+
+-- ===========================
+-- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 -- ===========================
 local function GetCharacter()
     local char = LocalPlayer.Character
@@ -44,7 +54,22 @@ local function GetRootPart()
     return root
 end
 
--- NoClip + полёт
+-- ===========================
+-- ОРИГИНАЛЬНЫЙ NOCLIP (из 3.0)
+-- ===========================
+local function SetCollision(enabled)
+    local character = GetCharacter()
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = enabled
+            part.CanQuery = enabled
+        end
+    end
+end
+
+-- ===========================
+-- НОВАЯ СИСТЕМА NOCLIP (Zyn-ic)
+-- ===========================
 local function SetNoclipFly(enabled)
     local char = GetCharacter()
     local hrp = GetRootPart()
@@ -65,7 +90,7 @@ local function SetNoclipFly(enabled)
         end
 
         hrp.Anchored = true
-        hrp.Position = Vector3.new(hrp.Position.X, FLY_HEIGHT, hrp.Position.Z)
+        hrp.Position = Vector3.new(hrp.Position.X, ZYN_CONFIG.FLY_HEIGHT, hrp.Position.Z)
     else
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
         hum:SetStateEnabled(Enum.HumanoidStateType.Landed, true)
@@ -82,7 +107,9 @@ local function SetNoclipFly(enabled)
     end
 end
 
--- Поиск ближайшей монеты (с кэшем)
+-- ===========================
+-- ⭐ ПОИСК МОНЕТЫ (Zyn-ic)
+-- ===========================
 local function GetNearestCoin()
     local now = tick()
     if now - lastCoinCheck < 0.1 and coinCache[1] then
@@ -100,7 +127,7 @@ local function GetNearestCoin()
         if obj:IsA("BasePart") and obj.Parent ~= GetCharacter() then
             local name = obj.Name:lower()
             local isCoin = name:find("coin") or name:find("money") or name:find("gold") or name:find("cash") or name:find("candy") or name:find("present")
-            
+
             if isCoin then
                 local dist = (rootPart.Position - obj.Position).Magnitude
                 table.insert(newCache, {obj = obj, dist = dist})
@@ -118,7 +145,9 @@ local function GetNearestCoin()
     return nearest
 end
 
--- Tween движение
+-- ==========================
+-- ⭐ TWEEN (Zyn-ic)
+-- ===========================
 local function FlyToPosition(targetPos)
     local root = GetRootPart()
     if not root then return end
@@ -129,7 +158,7 @@ local function FlyToPosition(targetPos)
     end
 
     local dist = (root.Position - targetPos).Magnitude
-    local duration = math.max(0.08, dist / TWEEN_SPEED)
+    local duration = math.max(0.08, dist / ZYN_CONFIG.TWEEN_SPEED)
 
     local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
     local tween = TweenService:Create(root, tweenInfo, {CFrame = CFrame.new(targetPos)})
@@ -138,7 +167,9 @@ local function FlyToPosition(targetPos)
     return tween
 end
 
--- Сбор монеты
+-- ===========================
+-- ⭐ СБОР МОНЕТЫ (Zyn-ic)
+-- ===========================
 local function CollectCoin(coin)
     if not coin or not coin.Parent then return false end
 
@@ -161,14 +192,17 @@ local function CollectCoin(coin)
     return true
 end
 
--- Автофарм
+-- ===========================
+-- ⭐ АВТОФАРМ (НОВЫЙ)
+-- ===========================
 local function StartAutoFarm()
     if farmLoop then return end
-    autoFarm = true
+    state.autoFarm = true
+
     SetNoclipFly(true)
 
     farmLoop = RunService.Stepped:Connect(function()
-        if not autoFarm then
+        if not state.autoFarm then
             farmLoop:Disconnect()
             farmLoop = nil
             return
@@ -177,17 +211,18 @@ local function StartAutoFarm()
         local coin = GetNearestCoin()
         if coin then
             CollectCoin(coin)
-            wait(COLLECT_DELAY)
+            wait(ZYN_CONFIG.COLLECT_DELAY)
         else
             wait(0.15)
         end
     end)
 
-    print("[TEST] Auto Farm Запущен")
+    print("[RBS] Auto Farm запущен")
+    UpdateUI()
 end
 
 local function StopAutoFarm()
-    autoFarm = false
+    state.autoFarm = false
 
     if farmLoop then
         farmLoop:Disconnect()
@@ -200,96 +235,194 @@ local function StopAutoFarm()
     end
 
     SetNoclipFly(false)
-    print("[TEST] Auto Farm Остановлен")
+
+    print("[RBS] Auto Farm остановлен")
+    UpdateUI()
 end
 
 -- ===========================
--- GUI ИЗ 3.0 (только одна кнопка AUTO FARM)
+-- ОРИГИНАЛЬНЫЙ GOD MODE (из 3.0)
 -- ===========================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "RBS_MM2_Ultimate"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = game:GetService("CoreGui")
+local function SetGodMode(enabled)
+    local character = GetCharacter()
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return end
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 250, 0, 120)
-mainFrame.Position = UDim2.new(0, 10, 0, 10)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-mainFrame.BackgroundTransparency = 0.05
-mainFrame.BorderSizePixel = 2
-mainFrame.BorderColor3 = Color3.fromRGB(255, 100, 100)
-mainFrame.Parent = screenGui
+    if enabled then
+        if godModeConnection then
+            godModeConnection:Disconnect()
+        end
 
--- Заголовок (как в 3.0)
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 30)
-titleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
+        humanoid.MaxHealth = math.huge
+        humanoid.Health = math.huge
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        humanoid.BreakJointsOnDeath = false
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 1, 0)
-title.BackgroundTransparency = 1
-title.Text = "RBS - MM2 ULTIMATE"
-title.TextColor3 = Color3.fromRGB(255, 120, 120)
-title.TextSize = 14
-title.Font = Enum.Font.GothamBold
-title.Parent = titleBar
+        godModeConnection = humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+            if humanoid.Health < humanoid.MaxHealth then
+                humanoid.Health = humanoid.MaxHealth
+            end
+        end)
 
--- Кнопка AUTO FARM (единственная)
-local autoFarmBtn = Instance.new("TextButton")
-autoFarmBtn.Size = UDim2.new(0, 220, 0, 40)
-autoFarmBtn.Position = UDim2.new(0, 15, 0, 45)
-autoFarmBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-autoFarmBtn.Text = "🔴 AUTO FARM: OFF"
-autoFarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-autoFarmBtn.TextSize = 14
-autoFarmBtn.Font = Enum.Font.GothamBold
-autoFarmBtn.Parent = mainFrame
-
--- Обработчик кнопки
-autoFarmBtn.MouseButton1Click:Connect(function()
-    if autoFarm then
-        StopAutoFarm()
-        autoFarmBtn.Text = "🔴 AUTO FARM: OFF"
-        autoFarmBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+                part.CanQuery = false
+            end
+        end
     else
-        StartAutoFarm()
-        autoFarmBtn.Text = "🟢 AUTO FARM: ON"
-        autoFarmBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
+        if godModeConnection then
+            godModeConnection:Disconnect()
+            godModeConnection = nil
+        end
+
+        humanoid.MaxHealth = 100
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+        humanoid.BreakJointsOnDeath = true
+
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.CanCollide = true
+                part.CanQuery = true
+            end
+        end
     end
-end)
+end
 
--- Перетаскивание окна (как в 3.0)
-local dragging = false
-local dragStart = nil
-local framePos = nil
+-- ===========================
+-- GUI МЕНЮ (ОРИГИНАЛ ИЗ 3.0)
+-- ===========================
+local screenGui = nil
+local mainFrame = nil
 
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        framePos = mainFrame.Position
+local function CreateMenu()
+    if screenGui then screenGui:Destroy() end
+
+    screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "RBS_MM2_Ultimate"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = game:GetService("CoreGui")
+
+    mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 250, 0, 150)
+    mainFrame.Position = UDim2.new(0, 10, 0, 10)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    mainFrame.BackgroundTransparency = 0.05
+    mainFrame.BorderSizePixel = 1
+    mainFrame.BorderColor3 = Color3.fromRGB(255, 100, 100)
+    mainFrame.Parent = screenGui
+
+    local titleBar = Instance.new("Frame")
+    titleBar.Size = UDim2.new(1, 0, 0, 30)
+    titleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = mainFrame
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 1, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "RBS - MM2 ULTIMATE"
+    title.TextColor3 = Color3.fromRGB(255, 120, 120)
+    title.TextSize = 14
+    title.Font = Enum.Font.GothamBold
+    title.Parent = titleBar
+
+    local autoFarmBtn = Instance.new("TextButton")
+    autoFarmBtn.Size = UDim2.new(0, 220, 0, 40)
+    autoFarmBtn.Position = UDim2.new(0, 15, 0, 45)
+    autoFarmBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    autoFarmBtn.Text = "🔴 AUTO FARM: OFF"
+    autoFarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    autoFarmBtn.TextSize = 14
+    autoFarmBtn.Font = Enum.Font.GothamBold
+    autoFarmBtn.Parent = mainFrame
+
+    local godModeBtn = Instance.new("TextButton")
+    godModeBtn.Size = UDim2.new(0, 220, 0, 40)
+    godModeBtn.Position = UDim2.new(0, 15, 0, 95)
+    godModeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    godModeBtn.Text = "🔴 GOD MODE: OFF"
+    godModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    godModeBtn.TextSize = 14
+    godModeBtn.Font = Enum.Font.GothamBold
+    godModeBtn.Parent = mainFrame
+
+    autoFarmBtn.MouseButton1Click:Connect(function()
+        if state.autoFarm then
+            StopAutoFarm()
+            autoFarmBtn.Text = "🔴 AUTO FARM: OFF"
+            autoFarmBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+        else
+            StartAutoFarm()
+            autoFarmBtn.Text = "🟢 AUTO FARM: ON"
+            autoFarmBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
+        end
+    end)
+
+    godModeBtn.MouseButton1Click:Connect(function()
+        if state.godMode then
+            state.godMode = false
+            SetGodMode(false)
+            godModeBtn.Text = "🔴 GOD MODE: OFF"
+            godModeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+        else
+            state.godMode = true
+            SetGodMode(true)
+            godModeBtn.Text = "🟢 GOD MODE: ON"
+            godModeBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
+        end
+        UpdateUI()
+    end)
+
+    local dragging = false
+    local dragStart = nil
+    local framePos = nil
+
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            framePos = mainFrame.Position
+        end
+    end)
+
+    titleBar.InputEnded:Connect(function()
+        dragging = false
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            mainFrame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+function UpdateUI()
+    if not mainFrame then return end
+
+    for _, btn in ipairs(mainFrame:GetDescendants()) do
+        if btn:IsA("TextButton") then
+            if btn.Text:find("AUTO FARM") then
+                btn.Text = state.autoFarm and "🟢 AUTO FARM: ON" or "🔴 AUTO FARM: OFF"
+                btn.BackgroundColor3 = state.autoFarm and Color3.fromRGB(60, 100, 60) or Color3.fromRGB(80, 80, 100)
+            elseif btn.Text:find("GOD MODE") then
+                btn.Text = state.godMode and "🟢 GOD MODE: ON" or "🔴 GOD MODE: OFF"
+                btn.BackgroundColor3 = state.godMode and Color3.fromRGB(60, 100, 60) or Color3.fromRGB(80, 80, 100)
+            end
+        end
     end
-end)
+end
 
-titleBar.InputEnded:Connect(function()
-    dragging = false
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStart
-        mainFrame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
-    end
-end)
-
--- Защита при респавне
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1)
-    if autoFarm then
+LocalPlayer.CharacterAdded:Connect(function(character)
+    wait(0.5)
+    if state.autoFarm then
         SetNoclipFly(true)
     end
+    if state.godMode then
+        SetGodMode(true)
+    end
+    print("[RBS] Character respawn detected, states restored")
 end)
 
 -- ===========================
@@ -297,10 +430,15 @@ end)
 -- ===========================
 print([[
 ╔═══════════════════════════════════════════╗
-║     RBS - MM2 ULTIMATE (TEST)            ║
+║     RBS - MM2 ULTIMATE FARM v3.0         ║
+║            (ZYN-IC CORE)                 ║
 ╠═══════════════════════════════════════════╣
-║  ✅ GUI из v3.0                          ║
-║  ✅ Система Zyn-ic                       ║
-║  ✅ Только одна кнопка AUTO FARM         ║
+║  ✅ Оригинальный GUI из 3.0              ║
+║  ✅ Новая система сбора монет Zyn-ic     ║
+║  ✅ Плавный Tween без дерганий           ║
+║  ✅ Кэширование монет (0.1 сек)          ║
 ╚═══════════════════════════════════════════╝
 ]])
+
+CreateMenu()
+UpdateUI()
