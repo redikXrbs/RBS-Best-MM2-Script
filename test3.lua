@@ -1,5 +1,4 @@
--- [[ RBS - MM2 ULTIMATE FARM v3.0 (UNDER MAP COLLECT) ]]
--- 100% оригинальный скрипт, изменена ТОЛЬКО высота сбора монет
+-- RBS - MM2 ULTIMATE FARM v3.0 (UNDER MAP COLLECT)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,7 +6,6 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
--- Состояния
 local state = {
     autoFarm = false,
     godMode = false
@@ -18,16 +16,11 @@ local isCollecting = false
 local currentTween = nil
 local farmLoop = nil
 local godModeConnection = nil
+local flightConnection = nil
 
--- ===========================
--- НАСТРОЙКИ СБОРА (НОВЫЕ)
--- ===========================
-local COLLECT_OFFSET = Vector3.new(0, 8, 0)  -- Смещение вверх при сборе монеты
-local FLY_HEIGHT = -8                         -- Высота полёта под картой
+local COLLECT_OFFSET = Vector3.new(0, 8, 0)
+local FLY_HEIGHT = -8
 
--- ===========================
--- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
--- ===========================
 local function GetCharacter()
     local character = LocalPlayer.Character
     if not character or not character.Parent then
@@ -46,9 +39,6 @@ local function GetRootPart()
     return rootPart
 end
 
--- ===========================
--- ПРОВЕРКА РАУНДА (ОРИГИНАЛ)
--- ===========================
 local function IsRoundActive()
     local players = game.Players:GetPlayers()
     local hasMurderer = false
@@ -92,9 +82,6 @@ local function IsRoundActive()
     return roundActive and not isInLobby
 end
 
--- ===========================
--- УПРАВЛЕНИЕ КОЛЛИЗИЕЙ (ОРИГИНАЛ)
--- ===========================
 local function SetCollision(enabled)
     local character = GetCharacter()
     for _, part in ipairs(character:GetDescendants()) do
@@ -105,27 +92,18 @@ local function SetCollision(enabled)
     end
 end
 
--- ===========================
--- ⭐ НОВАЯ ФУНКЦИЯ: ПОДДЕРЖАНИЕ ПОЛЁТА ПОД КАРТОЙ
--- ===========================
-local flightConnection = nil
 local function StartFlight()
     if flightConnection then return end
     flightConnection = RunService.Stepped:Connect(function()
         if not state.autoFarm then return end
-        
         local char = GetCharacter()
         local hrp = GetRootPart()
         local hum = char and char:FindFirstChild("Humanoid")
         if not hrp or not hum then return
-        
-        -- Отключаем гравитацию
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
         hum:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
         hum.PlatformStand = true
         hum.AutoRotate = false
-        
-        -- Фиксируем высоту под картой
         hrp.Anchored = true
         hrp.Position = Vector3.new(hrp.Position.X, FLY_HEIGHT, hrp.Position.Z)
     end)
@@ -136,7 +114,6 @@ local function StopFlight()
         flightConnection:Disconnect()
         flightConnection = nil
     end
-    -- Возвращаем гравитацию
     local hum = GetCharacter():FindFirstChild("Humanoid")
     if hum then
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
@@ -150,9 +127,6 @@ local function StopFlight()
     end
 end
 
--- ===========================
--- ОБНОВЛЕНИЕ ЦЕНТРА КАРТЫ (ОРИГИНАЛ)
--- ===========================
 local function UpdateCenterPosition()
     local map = workspace:FindFirstChild("Map")
     if map then
@@ -179,9 +153,6 @@ local function UpdateCenterPosition()
     end
 end
 
--- ===========================
--- ПОИСК МОНЕТ (ОРИГИНАЛ)
--- ===========================
 local function FindAllCoins()
     local coins = {}
     for _, obj in ipairs(workspace:GetDescendants()) do
@@ -210,9 +181,6 @@ local function FindAllCoins()
     return coins
 end
 
--- ===========================
--- TWEEN ДВИЖЕНИЕ (ОРИГИНАЛ)
--- ===========================
 local function TweenToPosition(targetPosition, callback)
     local rootPart = GetRootPart()
     if not rootPart then return end
@@ -237,12 +205,8 @@ local function TweenToPosition(targetPosition, callback)
     return currentTween
 end
 
--- ===========================
--- ⭐ СБОР МОНЕТЫ (С ПОДНЯТИЕМ ВВЕРХ)
--- ===========================
 local function CollectCoin(coin)
     pcall(function()
-        -- Летим к позиции монеты + смещение вверх, чтобы достать снизу
         local targetPos = coin.position + COLLECT_OFFSET
         TweenToPosition(targetPos)
         wait(0.05)
@@ -261,9 +225,6 @@ local function CollectCoin(coin)
     end)
 end
 
--- ===========================
--- GOD MODE (ОРИГИНАЛ)
--- ===========================
 local function SetGodMode(enabled)
     local character = GetCharacter()
     local humanoid = character:FindFirstChild("Humanoid")
@@ -310,15 +271,12 @@ local function SetGodMode(enabled)
     end
 end
 
--- ===========================
--- ОСНОВНАЯ ЛОГИКА AUTO FARM (С ПОДДЕРЖАНИЕМ ПОЛЁТА)
--- ===========================
 local function StartAutoFarm()
     if farmLoop then return end
     state.autoFarm = true
 
     SetCollision(false)
-    StartFlight()  -- Включаем поддержание полёта под картой
+    StartFlight()
 
     farmLoop = RunService.RenderStepped:Connect(function()
         if not state.autoFarm then 
@@ -368,7 +326,6 @@ local function StartAutoFarm()
         end
     end)
 
-    print("[RBS] Auto Farm запущен (полёт под картой)")
     UpdateUI()
 end
 
@@ -389,15 +346,8 @@ local function StopAutoFarm()
     StopFlight()
     SetCollision(true)
 
-    print("[RBS] Auto Farm остановлен")
     UpdateUI()
 end
-
--- ===========================
--- GUI МЕНЮ (ОРИГИНАЛ 3.0)
--- ===========================
-local screenGui = nil
-local mainFrame = nil
 
 local function CreateMenu()
     if screenGui then screenGui:Destroy() end
@@ -520,7 +470,6 @@ function UpdateUI()
     end
 end
 
--- Защита при респавне
 LocalPlayer.CharacterAdded:Connect(function(character)
     wait(0.5)
     SetCollision(not state.autoFarm)
@@ -531,22 +480,10 @@ LocalPlayer.CharacterAdded:Connect(function(character)
         StartFlight()
     end
     UpdateCenterPosition()
-    print("[RBS] Character respawn detected, states restored")
 end)
 
--- ===========================
--- ЗАПУСК
--- ===========================
-print([[
-╔═══════════════════════════════════════════╗
-║     RBS - MM2 ULTIMATE FARM v3.0         ║
-║         (UNDER MAP COLLECT)              ║
-╠═══════════════════════════════════════════╣
-║  ✅ Персонаж парит под картой            ║
-║  ✅ Собирает монеты снизу (смещение вверх)║
-║  ✅ Всё остальное как в оригинале        ║
-╚═══════════════════════════════════════════╝
-]])
+local screenGui = nil
+local mainFrame = nil
 
 CreateMenu()
 UpdateCenterPosition()
