@@ -1,5 +1,5 @@
--- [[ RBS - MM2 ULTIMATE FARM v3.0 (ZYN-IC CORE ONLY) ]]
--- Изменена ТОЛЬКО система поиска и сбора монет. Всё остальное (GUI, God Mode, NoClip) — оригинал.
+-- [[ RBS - MM2 ULTIMATE FARM v3.0 (UNDER MAP COLLECT) ]]
+-- 100% оригинальный скрипт, изменена ТОЛЬКО высота сбора монет
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,13 +7,12 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
--- Состояния (оригинал)
+-- Состояния
 local state = {
     autoFarm = false,
     godMode = false
 }
 
--- Позиция под центром карты (оставим, но не будем использовать)
 local centerPosition = nil
 local isCollecting = false
 local currentTween = nil
@@ -21,70 +20,13 @@ local farmLoop = nil
 local godModeConnection = nil
 
 -- ===========================
--- ⭐ НОВАЯ СИСТЕМА ZYN-IC (ТОЛЬКО ПОИСК И СБОР МОНЕТ)
+-- НАСТРОЙКИ СБОРА (НОВЫЕ)
 -- ===========================
-local lastCoinCheck = 0
-local coinCache = {}
-
-local function GetNearestCoin()
-    local now = tick()
-    if now - lastCoinCheck < 0.1 and coinCache[1] then
-        return coinCache[1]
-    end
-
-    local rootPart = GetRootPart()
-    if not rootPart then return nil end
-
-    local nearest = nil
-    local minDist = math.huge
-    local newCache = {}
-
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Parent ~= GetCharacter() then
-            local name = obj.Name:lower()
-            local isCoin = name:find("coin") or name:find("money") or name:find("gold") or name:find("cash")
-
-            if isCoin then
-                local dist = (rootPart.Position - obj.Position).Magnitude
-                table.insert(newCache, {obj = obj, dist = dist})
-                if dist < minDist then
-                    minDist = dist
-                    nearest = obj
-                end
-            end
-        end
-    end
-
-    table.sort(newCache, function(a, b) return a.dist < b.dist end)
-    coinCache = newCache
-    lastCoinCheck = now
-    return nearest
-end
-
-local function CollectCoin(coin)
-    if not coin or not coin.Parent then return false end
-
-    pcall(function()
-        TweenToPosition(coin.Position)
-        wait(0.05)
-
-        local click = coin:FindFirstChildWhichIsA("ClickDetector")
-        if click then
-            fireclickdetector(click)
-        end
-
-        local prompt = coin:FindFirstChildWhichIsA("ProximityPrompt")
-        if prompt then
-            prompt:InputHoldBegin()
-            wait(0.05)
-            prompt:InputHoldEnd()
-        end
-    end)
-    return true
-end
+local COLLECT_OFFSET = Vector3.new(0, 8, 0)  -- Смещение вверх при сборе монеты
+local FLY_HEIGHT = -8                         -- Высота полёта под картой
 
 -- ===========================
--- ОРИГИНАЛЬНЫЕ ФУНКЦИИ 3.0 (НЕ ТРОГАТЬ!)
+-- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 -- ===========================
 local function GetCharacter()
     local character = LocalPlayer.Character
@@ -104,6 +46,9 @@ local function GetRootPart()
     return rootPart
 end
 
+-- ===========================
+-- ПРОВЕРКА РАУНДА (ОРИГИНАЛ)
+-- ===========================
 local function IsRoundActive()
     local players = game.Players:GetPlayers()
     local hasMurderer = false
@@ -147,6 +92,67 @@ local function IsRoundActive()
     return roundActive and not isInLobby
 end
 
+-- ===========================
+-- УПРАВЛЕНИЕ КОЛЛИЗИЕЙ (ОРИГИНАЛ)
+-- ===========================
+local function SetCollision(enabled)
+    local character = GetCharacter()
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = enabled
+            part.CanQuery = enabled
+        end
+    end
+end
+
+-- ===========================
+-- ⭐ НОВАЯ ФУНКЦИЯ: ПОДДЕРЖАНИЕ ПОЛЁТА ПОД КАРТОЙ
+-- ===========================
+local flightConnection = nil
+local function StartFlight()
+    if flightConnection then return end
+    flightConnection = RunService.Stepped:Connect(function()
+        if not state.autoFarm then return end
+        
+        local char = GetCharacter()
+        local hrp = GetRootPart()
+        local hum = char and char:FindFirstChild("Humanoid")
+        if not hrp or not hum then return
+        
+        -- Отключаем гравитацию
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
+        hum.PlatformStand = true
+        hum.AutoRotate = false
+        
+        -- Фиксируем высоту под картой
+        hrp.Anchored = true
+        hrp.Position = Vector3.new(hrp.Position.X, FLY_HEIGHT, hrp.Position.Z)
+    end)
+end
+
+local function StopFlight()
+    if flightConnection then
+        flightConnection:Disconnect()
+        flightConnection = nil
+    end
+    -- Возвращаем гравитацию
+    local hum = GetCharacter():FindFirstChild("Humanoid")
+    if hum then
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Landed, true)
+        hum.PlatformStand = false
+        hum.AutoRotate = true
+    end
+    local hrp = GetRootPart()
+    if hrp then
+        hrp.Anchored = false
+    end
+end
+
+-- ===========================
+-- ОБНОВЛЕНИЕ ЦЕНТРА КАРТЫ (ОРИГИНАЛ)
+-- ===========================
 local function UpdateCenterPosition()
     local map = workspace:FindFirstChild("Map")
     if map then
@@ -173,6 +179,40 @@ local function UpdateCenterPosition()
     end
 end
 
+-- ===========================
+-- ПОИСК МОНЕТ (ОРИГИНАЛ)
+-- ===========================
+local function FindAllCoins()
+    local coins = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Parent ~= LocalPlayer.Character then
+            local name = obj.Name:lower()
+            local isCoin = name:find("coin") or name:find("money") or name:find("gold")
+
+            if not isCoin and obj.BrickColor then
+                isCoin = obj.BrickColor.Name == "Bright yellow" or obj.BrickColor.Name == "Gold"
+            end
+
+            if isCoin then
+                table.insert(coins, {
+                    object = obj,
+                    position = obj.Position,
+                    distance = (GetRootPart().Position - obj.Position).Magnitude
+                })
+            end
+        end
+    end
+
+    table.sort(coins, function(a, b)
+        return a.distance < b.distance
+    end)
+
+    return coins
+end
+
+-- ===========================
+-- TWEEN ДВИЖЕНИЕ (ОРИГИНАЛ)
+-- ===========================
 local function TweenToPosition(targetPosition, callback)
     local rootPart = GetRootPart()
     if not rootPart then return end
@@ -197,16 +237,33 @@ local function TweenToPosition(targetPosition, callback)
     return currentTween
 end
 
-local function SetCollision(enabled)
-    local character = GetCharacter()
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = enabled
-            part.CanQuery = enabled
+-- ===========================
+-- ⭐ СБОР МОНЕТЫ (С ПОДНЯТИЕМ ВВЕРХ)
+-- ===========================
+local function CollectCoin(coin)
+    pcall(function()
+        -- Летим к позиции монеты + смещение вверх, чтобы достать снизу
+        local targetPos = coin.position + COLLECT_OFFSET
+        TweenToPosition(targetPos)
+        wait(0.05)
+
+        local clickDetector = coin.object:FindFirstChildWhichIsA("ClickDetector")
+        if clickDetector then
+            fireclickdetector(clickDetector)
         end
-    end
+
+        local proximityPrompt = coin.object:FindFirstChildWhichIsA("ProximityPrompt")
+        if proximityPrompt then
+            proximityPrompt:InputHoldBegin()
+            wait(0.05)
+            proximityPrompt:InputHoldEnd()
+        end
+    end)
 end
 
+-- ===========================
+-- GOD MODE (ОРИГИНАЛ)
+-- ===========================
 local function SetGodMode(enabled)
     local character = GetCharacter()
     local humanoid = character:FindFirstChild("Humanoid")
@@ -254,13 +311,14 @@ local function SetGodMode(enabled)
 end
 
 -- ===========================
--- ⭐ АВТОФАРМ (ОБНОВЛЁННЫЙ — ИСПОЛЬЗУЕТ ZYN-IC)
+-- ОСНОВНАЯ ЛОГИКА AUTO FARM (С ПОДДЕРЖАНИЕМ ПОЛЁТА)
 -- ===========================
 local function StartAutoFarm()
     if farmLoop then return end
     state.autoFarm = true
 
     SetCollision(false)
+    StartFlight()  -- Включаем поддержание полёта под картой
 
     farmLoop = RunService.RenderStepped:Connect(function()
         if not state.autoFarm then 
@@ -279,15 +337,26 @@ local function StartAutoFarm()
         end
 
         UpdateCenterPosition()
-        
-        -- ВОТ ЗДЕСЬ ИСПОЛЬЗУЕТСЯ НОВАЯ СИСТЕМА ZYN-IC
-        local coin = GetNearestCoin()
-        
-        if coin then
+        local coins = FindAllCoins()
+
+        if #coins > 0 then
             isCollecting = true
-            CollectCoin(coin)
-            wait(0.1)
+
+            for _, coin in ipairs(coins) do
+                if not state.autoFarm then break end
+                if coin.object and coin.object.Parent then
+                    CollectCoin(coin)
+                    wait(0.1)
+                end
+            end
+
             isCollecting = false
+
+            if state.autoFarm and IsRoundActive() and #FindAllCoins() == 0 then
+                if centerPosition then
+                    TweenToPosition(centerPosition)
+                end
+            end
         else
             if not isCollecting and centerPosition then
                 local rootPart = GetRootPart()
@@ -299,7 +368,7 @@ local function StartAutoFarm()
         end
     end)
 
-    print("[RBS] Auto Farm запущен")
+    print("[RBS] Auto Farm запущен (полёт под картой)")
     UpdateUI()
 end
 
@@ -317,6 +386,7 @@ local function StopAutoFarm()
         currentTween = nil
     end
 
+    StopFlight()
     SetCollision(true)
 
     print("[RBS] Auto Farm остановлен")
@@ -324,7 +394,7 @@ local function StopAutoFarm()
 end
 
 -- ===========================
--- GUI МЕНЮ (ОРИГИНАЛ 3.0 — НЕ ТРОГАТЬ!)
+-- GUI МЕНЮ (ОРИГИНАЛ 3.0)
 -- ===========================
 local screenGui = nil
 local mainFrame = nil
@@ -457,6 +527,9 @@ LocalPlayer.CharacterAdded:Connect(function(character)
     if state.godMode then
         SetGodMode(true)
     end
+    if state.autoFarm then
+        StartFlight()
+    end
     UpdateCenterPosition()
     print("[RBS] Character respawn detected, states restored")
 end)
@@ -467,11 +540,11 @@ end)
 print([[
 ╔═══════════════════════════════════════════╗
 ║     RBS - MM2 ULTIMATE FARM v3.0         ║
-║            (ZYN-IC COLLECT)              ║
+║         (UNDER MAP COLLECT)              ║
 ╠═══════════════════════════════════════════╣
-║  ✅ Оригинальный GUI из 3.0              ║
-║  ✅ Новая система сбора монет Zyn-ic     ║
-║  ✅ Всё остальное без изменений          ║
+║  ✅ Персонаж парит под картой            ║
+║  ✅ Собирает монеты снизу (смещение вверх)║
+║  ✅ Всё остальное как в оригинале        ║
 ╚═══════════════════════════════════════════╝
 ]])
 
