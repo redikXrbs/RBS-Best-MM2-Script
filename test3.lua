@@ -1,5 +1,5 @@
--- [[ RBS - MM2 ULTIMATE FARM v3.0 (ZYN-IC CORE) ]]
--- 100% рабочая версия 3.0, заменена только система автофарма на проверенную Zyn-ic
+-- [[ RBS - MM2 ULTIMATE FARM v3.0 (ZYN-IC CORE ONLY) ]]
+-- Изменена ТОЛЬКО система поиска и сбора монет. Всё остальное (GUI, God Mode, NoClip) — оригинал.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -7,109 +7,25 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
--- ===========================
--- СОСТОЯНИЯ
--- ===========================
+-- Состояния (оригинал)
 local state = {
     autoFarm = false,
     godMode = false
 }
 
--- ===========================
--- ПЕРЕМЕННЫЕ (Zyn-ic)
--- ===========================
+-- Позиция под центром карты (оставим, но не будем использовать)
+local centerPosition = nil
+local isCollecting = false
 local currentTween = nil
 local farmLoop = nil
 local godModeConnection = nil
+
+-- ===========================
+-- ⭐ НОВАЯ СИСТЕМА ZYN-IC (ТОЛЬКО ПОИСК И СБОР МОНЕТ)
+-- ===========================
 local lastCoinCheck = 0
 local coinCache = {}
 
--- ===========================
--- НАСТРОЙКИ ZYN-IC
--- ===========================
-local ZYN_CONFIG = {
-    TWEEN_SPEED = 65,
-    COLLECT_DELAY = 0.05,
-    FLY_HEIGHT = -8,
-}
-
--- ===========================
--- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
--- ===========================
-local function GetCharacter()
-    local char = LocalPlayer.Character
-    if not char or not char.Parent then
-        char = LocalPlayer.CharacterAdded:Wait()
-    end
-    return char
-end
-
-local function GetRootPart()
-    local char = GetCharacter()
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then
-        char:WaitForChild("HumanoidRootPart")
-        root = char.HumanoidRootPart
-    end
-    return root
-end
-
--- ===========================
--- ОРИГИНАЛЬНЫЙ NOCLIP (из 3.0)
--- ===========================
-local function SetCollision(enabled)
-    local character = GetCharacter()
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = enabled
-            part.CanQuery = enabled
-        end
-    end
-end
-
--- ===========================
--- НОВАЯ СИСТЕМА NOCLIP (Zyn-ic)
--- ===========================
-local function SetNoclipFly(enabled)
-    local char = GetCharacter()
-    local hrp = GetRootPart()
-    local hum = char and char:FindFirstChild("Humanoid")
-    if not hrp or not hum then return
-
-    if enabled then
-        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
-        hum.PlatformStand = true
-        hum.AutoRotate = false
-
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-                part.CanQuery = false
-            end
-        end
-
-        hrp.Anchored = true
-        hrp.Position = Vector3.new(hrp.Position.X, ZYN_CONFIG.FLY_HEIGHT, hrp.Position.Z)
-    else
-        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Landed, true)
-        hum.PlatformStand = false
-        hum.AutoRotate = true
-        hrp.Anchored = false
-
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                part.CanCollide = true
-                part.CanQuery = true
-            end
-        end
-    end
-end
-
--- ===========================
--- ⭐ ПОИСК МОНЕТЫ (Zyn-ic)
--- ===========================
 local function GetNearestCoin()
     local now = tick()
     if now - lastCoinCheck < 0.1 and coinCache[1] then
@@ -126,7 +42,7 @@ local function GetNearestCoin()
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Parent ~= GetCharacter() then
             local name = obj.Name:lower()
-            local isCoin = name:find("coin") or name:find("money") or name:find("gold") or name:find("cash") or name:find("candy") or name:find("present")
+            local isCoin = name:find("coin") or name:find("money") or name:find("gold") or name:find("cash")
 
             if isCoin then
                 local dist = (rootPart.Position - obj.Position).Magnitude
@@ -145,37 +61,12 @@ local function GetNearestCoin()
     return nearest
 end
 
--- ==========================
--- ⭐ TWEEN (Zyn-ic)
--- ===========================
-local function FlyToPosition(targetPos)
-    local root = GetRootPart()
-    if not root then return end
-
-    if currentTween then
-        currentTween:Cancel()
-        currentTween = nil
-    end
-
-    local dist = (root.Position - targetPos).Magnitude
-    local duration = math.max(0.08, dist / ZYN_CONFIG.TWEEN_SPEED)
-
-    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
-    local tween = TweenService:Create(root, tweenInfo, {CFrame = CFrame.new(targetPos)})
-    currentTween = tween
-    tween:Play()
-    return tween
-end
-
--- ===========================
--- ⭐ СБОР МОНЕТЫ (Zyn-ic)
--- ===========================
 local function CollectCoin(coin)
     if not coin or not coin.Parent then return false end
 
     pcall(function()
-        FlyToPosition(coin.Position)
-        wait(0.03)
+        TweenToPosition(coin.Position)
+        wait(0.05)
 
         local click = coin:FindFirstChildWhichIsA("ClickDetector")
         if click then
@@ -185,7 +76,7 @@ local function CollectCoin(coin)
         local prompt = coin:FindFirstChildWhichIsA("ProximityPrompt")
         if prompt then
             prompt:InputHoldBegin()
-            wait(0.03)
+            wait(0.05)
             prompt:InputHoldEnd()
         end
     end)
@@ -193,56 +84,129 @@ local function CollectCoin(coin)
 end
 
 -- ===========================
--- ⭐ АВТОФАРМ (НОВЫЙ)
+-- ОРИГИНАЛЬНЫЕ ФУНКЦИИ 3.0 (НЕ ТРОГАТЬ!)
 -- ===========================
-local function StartAutoFarm()
-    if farmLoop then return end
-    state.autoFarm = true
-
-    SetNoclipFly(true)
-
-    farmLoop = RunService.Stepped:Connect(function()
-        if not state.autoFarm then
-            farmLoop:Disconnect()
-            farmLoop = nil
-            return
-        end
-
-        local coin = GetNearestCoin()
-        if coin then
-            CollectCoin(coin)
-            wait(ZYN_CONFIG.COLLECT_DELAY)
-        else
-            wait(0.15)
-        end
-    end)
-
-    print("[RBS] Auto Farm запущен")
-    UpdateUI()
+local function GetCharacter()
+    local character = LocalPlayer.Character
+    if not character or not character.Parent then
+        character = LocalPlayer.CharacterAdded:Wait()
+    end
+    return character
 end
 
-local function StopAutoFarm()
-    state.autoFarm = false
-
-    if farmLoop then
-        farmLoop:Disconnect()
-        farmLoop = nil
+local function GetRootPart()
+    local character = GetCharacter()
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then
+        character:WaitForChild("HumanoidRootPart")
+        rootPart = character.HumanoidRootPart
     end
+    return rootPart
+end
+
+local function IsRoundActive()
+    local players = game.Players:GetPlayers()
+    local hasMurderer = false
+    local hasSheriff = false
+
+    for _, player in ipairs(players) do
+        local character = player.Character
+        if character then
+            local backpack = player.Backpack
+            if character:FindFirstChildOfClass("Tool") then
+                local tool = character:FindFirstChildOfClass("Tool")
+                if tool and (tool.Name:lower():find("knife") or tool.Name:lower():find("gun")) then
+                    if player ~= LocalPlayer then
+                        hasMurderer = hasMurderer or tool.Name:lower():find("knife")
+                        hasSheriff = hasSheriff or tool.Name:lower():find("gun")
+                    end
+                end
+            end
+            if backpack then
+                for _, tool in ipairs(backpack:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        if tool.Name:lower():find("knife") then hasMurderer = true end
+                        if tool.Name:lower():find("gun") then hasSheriff = true end
+                    end
+                end
+            end
+        end
+    end
+
+    local roundActive = hasMurderer or hasSheriff
+
+    local character = LocalPlayer.Character
+    local isInLobby = false
+    if character then
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if rootPart and math.abs(rootPart.Position.Y) > 400 then
+            isInLobby = true
+        end
+    end
+
+    return roundActive and not isInLobby
+end
+
+local function UpdateCenterPosition()
+    local map = workspace:FindFirstChild("Map")
+    if map then
+        local primaryPart = map:FindFirstChild("PrimaryPart") or map:FindFirstChild("Baseplate")
+        if primaryPart then
+            centerPosition = primaryPart.Position + Vector3.new(0, -10, 0)
+            return
+        end
+    end
+
+    local totalPos = Vector3.new(0, 0, 0)
+    local count = 0
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Size.Magnitude > 100 then
+            totalPos = totalPos + obj.Position
+            count = count + 1
+        end
+    end
+
+    if count > 0 then
+        centerPosition = (totalPos / count) + Vector3.new(0, -10, 0)
+    else
+        centerPosition = Vector3.new(0, 0, 0) + Vector3.new(0, -10, 0)
+    end
+end
+
+local function TweenToPosition(targetPosition, callback)
+    local rootPart = GetRootPart()
+    if not rootPart then return end
 
     if currentTween then
         currentTween:Cancel()
         currentTween = nil
     end
 
-    SetNoclipFly(false)
+    local distance = (rootPart.Position - targetPosition).Magnitude
+    local speed = 35
+    local duration = math.max(0.2, distance / speed)
 
-    print("[RBS] Auto Farm остановлен")
-    UpdateUI()
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    currentTween = TweenService:Create(rootPart, tweenInfo, {CFrame = CFrame.new(targetPosition)})
+
+    if callback then
+        currentTween.Completed:Connect(callback)
+    end
+
+    currentTween:Play()
+    return currentTween
 end
 
--- ===========================
--- ОРИГИНАЛЬНЫЙ GOD MODE (из 3.0)
--- ===========================
+local function SetCollision(enabled)
+    local character = GetCharacter()
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = enabled
+            part.CanQuery = enabled
+        end
+    end
+end
+
 local function SetGodMode(enabled)
     local character = GetCharacter()
     local humanoid = character:FindFirstChild("Humanoid")
@@ -290,7 +254,77 @@ local function SetGodMode(enabled)
 end
 
 -- ===========================
--- GUI МЕНЮ (ОРИГИНАЛ ИЗ 3.0)
+-- ⭐ АВТОФАРМ (ОБНОВЛЁННЫЙ — ИСПОЛЬЗУЕТ ZYN-IC)
+-- ===========================
+local function StartAutoFarm()
+    if farmLoop then return end
+    state.autoFarm = true
+
+    SetCollision(false)
+
+    farmLoop = RunService.RenderStepped:Connect(function()
+        if not state.autoFarm then 
+            farmLoop:Disconnect()
+            farmLoop = nil
+            return 
+        end
+
+        if not IsRoundActive() then
+            wait(1)
+            return
+        end
+
+        if state.godMode then
+            SetGodMode(true)
+        end
+
+        UpdateCenterPosition()
+        
+        -- ВОТ ЗДЕСЬ ИСПОЛЬЗУЕТСЯ НОВАЯ СИСТЕМА ZYN-IC
+        local coin = GetNearestCoin()
+        
+        if coin then
+            isCollecting = true
+            CollectCoin(coin)
+            wait(0.1)
+            isCollecting = false
+        else
+            if not isCollecting and centerPosition then
+                local rootPart = GetRootPart()
+                if rootPart and (rootPart.Position - centerPosition).Magnitude > 15 then
+                    TweenToPosition(centerPosition)
+                end
+            end
+            wait(0.2)
+        end
+    end)
+
+    print("[RBS] Auto Farm запущен")
+    UpdateUI()
+end
+
+local function StopAutoFarm()
+    state.autoFarm = false
+    isCollecting = false
+
+    if farmLoop then
+        farmLoop:Disconnect()
+        farmLoop = nil
+    end
+
+    if currentTween then
+        currentTween:Cancel()
+        currentTween = nil
+    end
+
+    SetCollision(true)
+
+    print("[RBS] Auto Farm остановлен")
+    UpdateUI()
+end
+
+-- ===========================
+-- GUI МЕНЮ (ОРИГИНАЛ 3.0 — НЕ ТРОГАТЬ!)
 -- ===========================
 local screenGui = nil
 local mainFrame = nil
@@ -329,7 +363,7 @@ local function CreateMenu()
 
     local autoFarmBtn = Instance.new("TextButton")
     autoFarmBtn.Size = UDim2.new(0, 220, 0, 40)
-    autoFarmBtn.Position = UDim2.new(0, 15, 0, 45)
+    autoFarmBtn.Position = UDim2.new(0, 15, 0, 40)
     autoFarmBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     autoFarmBtn.Text = "🔴 AUTO FARM: OFF"
     autoFarmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -339,7 +373,7 @@ local function CreateMenu()
 
     local godModeBtn = Instance.new("TextButton")
     godModeBtn.Size = UDim2.new(0, 220, 0, 40)
-    godModeBtn.Position = UDim2.new(0, 15, 0, 95)
+    godModeBtn.Position = UDim2.new(0, 15, 0, 90)
     godModeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
     godModeBtn.Text = "🔴 GOD MODE: OFF"
     godModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -386,8 +420,10 @@ local function CreateMenu()
         end
     end)
 
-    titleBar.InputEnded:Connect(function()
-        dragging = false
+    titleBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
     end)
 
     UserInputService.InputChanged:Connect(function(input)
@@ -414,14 +450,14 @@ function UpdateUI()
     end
 end
 
+-- Защита при респавне
 LocalPlayer.CharacterAdded:Connect(function(character)
     wait(0.5)
-    if state.autoFarm then
-        SetNoclipFly(true)
-    end
+    SetCollision(not state.autoFarm)
     if state.godMode then
         SetGodMode(true)
     end
+    UpdateCenterPosition()
     print("[RBS] Character respawn detected, states restored")
 end)
 
@@ -431,14 +467,13 @@ end)
 print([[
 ╔═══════════════════════════════════════════╗
 ║     RBS - MM2 ULTIMATE FARM v3.0         ║
-║            (ZYN-IC CORE)                 ║
+║            (ZYN-IC COLLECT)              ║
 ╠═══════════════════════════════════════════╣
 ║  ✅ Оригинальный GUI из 3.0              ║
 ║  ✅ Новая система сбора монет Zyn-ic     ║
-║  ✅ Плавный Tween без дерганий           ║
-║  ✅ Кэширование монет (0.1 сек)          ║
+║  ✅ Всё остальное без изменений          ║
 ╚═══════════════════════════════════════════╝
 ]])
 
 CreateMenu()
-UpdateUI()
+UpdateCenterPosition()
