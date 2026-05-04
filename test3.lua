@@ -48,20 +48,30 @@ local function IsRoundActive()
         local character = player.Character
         if character then
             local backpack = player.Backpack
-            if character:FindFirstChildOfClass("Tool") then
-                local tool = character:FindFirstChildOfClass("Tool")
-                if tool and (tool.Name:lower():find("knife") or tool.Name:lower():find("gun")) then
+            local tool = character:FindFirstChildOfClass("Tool")
+            if tool then
+                local toolName = tool.Name:lower()
+                if toolName:find("knife") or toolName:find("gun") then
                     if player ~= LocalPlayer then
-                        hasMurderer = hasMurderer or tool.Name:lower():find("knife")
-                        hasSheriff = hasSheriff or tool.Name:lower():find("gun")
+                        if toolName:find("knife") then
+                            hasMurderer = true
+                        end
+                        if toolName:find("gun") then
+                            hasSheriff = true
+                        end
                     end
                 end
             end
             if backpack then
-                for _, tool in ipairs(backpack:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        if tool.Name:lower():find("knife") then hasMurderer = true end
-                        if tool.Name:lower():find("gun") then hasSheriff = true end
+                for _, t in ipairs(backpack:GetChildren()) do
+                    if t:IsA("Tool") then
+                        local tName = t.Name:lower()
+                        if tName:find("knife") then
+                            hasMurderer = true
+                        end
+                        if tName:find("gun") then
+                            hasSheriff = true
+                        end
                     end
                 end
             end
@@ -93,13 +103,19 @@ local function SetCollision(enabled)
 end
 
 local function StartFlight()
-    if flightConnection then return end
+    if flightConnection then
+        return
+    end
     flightConnection = RunService.Stepped:Connect(function()
-        if not state.autoFarm then return end
+        if not state.autoFarm then
+            return
+        end
         local char = GetCharacter()
         local hrp = GetRootPart()
         local hum = char and char:FindFirstChild("Humanoid")
-        if not hrp or not hum then return
+        if not hrp or not hum then
+            return
+        end
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
         hum:SetStateEnabled(Enum.HumanoidStateType.Landed, false)
         hum.PlatformStand = true
@@ -130,7 +146,10 @@ end
 local function UpdateCenterPosition()
     local map = workspace:FindFirstChild("Map")
     if map then
-        local primaryPart = map:FindFirstChild("PrimaryPart") or map:FindFirstChild("Baseplate")
+        local primaryPart = map:FindFirstChild("PrimaryPart")
+        if not primaryPart then
+            primaryPart = map:FindFirstChild("Baseplate")
+        end
         if primaryPart then
             centerPosition = primaryPart.Position + Vector3.new(0, -10, 0)
             return
@@ -159,48 +178,42 @@ local function FindAllCoins()
         if obj:IsA("BasePart") and obj.Parent ~= LocalPlayer.Character then
             local name = obj.Name:lower()
             local isCoin = name:find("coin") or name:find("money") or name:find("gold")
-
             if not isCoin and obj.BrickColor then
                 isCoin = obj.BrickColor.Name == "Bright yellow" or obj.BrickColor.Name == "Gold"
             end
-
             if isCoin then
+                local dist = (GetRootPart().Position - obj.Position).Magnitude
                 table.insert(coins, {
                     object = obj,
                     position = obj.Position,
-                    distance = (GetRootPart().Position - obj.Position).Magnitude
+                    distance = dist
                 })
             end
         end
     end
-
     table.sort(coins, function(a, b)
         return a.distance < b.distance
     end)
-
     return coins
 end
 
 local function TweenToPosition(targetPosition, callback)
     local rootPart = GetRootPart()
-    if not rootPart then return end
-
+    if not rootPart then
+        return
+    end
     if currentTween then
         currentTween:Cancel()
         currentTween = nil
     end
-
     local distance = (rootPart.Position - targetPosition).Magnitude
     local speed = 35
     local duration = math.max(0.2, distance / speed)
-
     local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
     currentTween = TweenService:Create(rootPart, tweenInfo, {CFrame = CFrame.new(targetPosition)})
-
     if callback then
         currentTween.Completed:Connect(callback)
     end
-
     currentTween:Play()
     return currentTween
 end
@@ -210,12 +223,10 @@ local function CollectCoin(coin)
         local targetPos = coin.position + COLLECT_OFFSET
         TweenToPosition(targetPos)
         wait(0.05)
-
         local clickDetector = coin.object:FindFirstChildWhichIsA("ClickDetector")
         if clickDetector then
             fireclickdetector(clickDetector)
         end
-
         local proximityPrompt = coin.object:FindFirstChildWhichIsA("ProximityPrompt")
         if proximityPrompt then
             proximityPrompt:InputHoldBegin()
@@ -228,24 +239,22 @@ end
 local function SetGodMode(enabled)
     local character = GetCharacter()
     local humanoid = character:FindFirstChild("Humanoid")
-    if not humanoid then return end
-
+    if not humanoid then
+        return
+    end
     if enabled then
         if godModeConnection then
             godModeConnection:Disconnect()
         end
-
         humanoid.MaxHealth = math.huge
         humanoid.Health = math.huge
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
         humanoid.BreakJointsOnDeath = false
-
         godModeConnection = humanoid:GetPropertyChangedSignal("Health"):Connect(function()
             if humanoid.Health < humanoid.MaxHealth then
                 humanoid.Health = humanoid.MaxHealth
             end
         end)
-
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
@@ -257,11 +266,9 @@ local function SetGodMode(enabled)
             godModeConnection:Disconnect()
             godModeConnection = nil
         end
-
         humanoid.MaxHealth = 100
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
         humanoid.BreakJointsOnDeath = true
-
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
                 part.CanCollide = true
@@ -272,44 +279,39 @@ local function SetGodMode(enabled)
 end
 
 local function StartAutoFarm()
-    if farmLoop then return end
+    if farmLoop then
+        return
+    end
     state.autoFarm = true
-
     SetCollision(false)
     StartFlight()
-
     farmLoop = RunService.RenderStepped:Connect(function()
-        if not state.autoFarm then 
+        if not state.autoFarm then
             farmLoop:Disconnect()
             farmLoop = nil
-            return 
+            return
         end
-
         if not IsRoundActive() then
             wait(1)
             return
         end
-
         if state.godMode then
             SetGodMode(true)
         end
-
         UpdateCenterPosition()
         local coins = FindAllCoins()
-
         if #coins > 0 then
             isCollecting = true
-
             for _, coin in ipairs(coins) do
-                if not state.autoFarm then break end
+                if not state.autoFarm then
+                    break
+                end
                 if coin.object and coin.object.Parent then
                     CollectCoin(coin)
                     wait(0.1)
                 end
             end
-
             isCollecting = false
-
             if state.autoFarm and IsRoundActive() and #FindAllCoins() == 0 then
                 if centerPosition then
                     TweenToPosition(centerPosition)
@@ -325,38 +327,36 @@ local function StartAutoFarm()
             wait(0.2)
         end
     end)
-
     UpdateUI()
 end
 
 local function StopAutoFarm()
     state.autoFarm = false
     isCollecting = false
-
     if farmLoop then
         farmLoop:Disconnect()
         farmLoop = nil
     end
-
     if currentTween then
         currentTween:Cancel()
         currentTween = nil
     end
-
     StopFlight()
     SetCollision(true)
-
     UpdateUI()
 end
 
-local function CreateMenu()
-    if screenGui then screenGui:Destroy() end
+local screenGui = nil
+local mainFrame = nil
 
+local function CreateMenu()
+    if screenGui then
+        screenGui:Destroy()
+    end
     screenGui = Instance.new("ScreenGui")
     screenGui.Name = "RBS_MM2_Ultimate"
     screenGui.ResetOnSpawn = false
     screenGui.Parent = game:GetService("CoreGui")
-
     mainFrame = Instance.new("Frame")
     mainFrame.Size = UDim2.new(0, 250, 0, 150)
     mainFrame.Position = UDim2.new(0, 10, 0, 10)
@@ -365,13 +365,11 @@ local function CreateMenu()
     mainFrame.BorderSizePixel = 1
     mainFrame.BorderColor3 = Color3.fromRGB(255, 100, 100)
     mainFrame.Parent = screenGui
-
     local titleBar = Instance.new("Frame")
     titleBar.Size = UDim2.new(1, 0, 0, 30)
     titleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
     titleBar.BorderSizePixel = 0
     titleBar.Parent = mainFrame
-
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 1, 0)
     title.BackgroundTransparency = 1
@@ -380,7 +378,6 @@ local function CreateMenu()
     title.TextSize = 14
     title.Font = Enum.Font.GothamBold
     title.Parent = titleBar
-
     local autoFarmBtn = Instance.new("TextButton")
     autoFarmBtn.Size = UDim2.new(0, 220, 0, 40)
     autoFarmBtn.Position = UDim2.new(0, 15, 0, 40)
@@ -390,7 +387,6 @@ local function CreateMenu()
     autoFarmBtn.TextSize = 14
     autoFarmBtn.Font = Enum.Font.GothamBold
     autoFarmBtn.Parent = mainFrame
-
     local godModeBtn = Instance.new("TextButton")
     godModeBtn.Size = UDim2.new(0, 220, 0, 40)
     godModeBtn.Position = UDim2.new(0, 15, 0, 90)
@@ -400,7 +396,6 @@ local function CreateMenu()
     godModeBtn.TextSize = 14
     godModeBtn.Font = Enum.Font.GothamBold
     godModeBtn.Parent = mainFrame
-
     autoFarmBtn.MouseButton1Click:Connect(function()
         if state.autoFarm then
             StopAutoFarm()
@@ -412,7 +407,6 @@ local function CreateMenu()
             autoFarmBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
         end
     end)
-
     godModeBtn.MouseButton1Click:Connect(function()
         if state.godMode then
             state.godMode = false
@@ -427,11 +421,9 @@ local function CreateMenu()
         end
         UpdateUI()
     end)
-
     local dragging = false
     local dragStart = nil
     local framePos = nil
-
     titleBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
@@ -439,13 +431,9 @@ local function CreateMenu()
             framePos = mainFrame.Position
         end
     end)
-
-    titleBar.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
+    titleBar.InputEnded:Connect(function()
+        dragging = false
     end)
-
     UserInputService.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local delta = input.Position - dragStart
@@ -455,22 +443,34 @@ local function CreateMenu()
 end
 
 function UpdateUI()
-    if not mainFrame then return end
-
+    if not mainFrame then
+        return
+    end
     for _, btn in ipairs(mainFrame:GetDescendants()) do
         if btn:IsA("TextButton") then
-            if btn.Text:find("AUTO FARM") then
-                btn.Text = state.autoFarm and "🟢 AUTO FARM: ON" or "🔴 AUTO FARM: OFF"
-                btn.BackgroundColor3 = state.autoFarm and Color3.fromRGB(60, 100, 60) or Color3.fromRGB(80, 80, 100)
-            elseif btn.Text:find("GOD MODE") then
-                btn.Text = state.godMode and "🟢 GOD MODE: ON" or "🔴 GOD MODE: OFF"
-                btn.BackgroundColor3 = state.godMode and Color3.fromRGB(60, 100, 60) or Color3.fromRGB(80, 80, 100)
+            local text = btn.Text
+            if text:find("AUTO FARM") then
+                if state.autoFarm then
+                    btn.Text = "🟢 AUTO FARM: ON"
+                    btn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
+                else
+                    btn.Text = "🔴 AUTO FARM: OFF"
+                    btn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+                end
+            elseif text:find("GOD MODE") then
+                if state.godMode then
+                    btn.Text = "🟢 GOD MODE: ON"
+                    btn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
+                else
+                    btn.Text = "🔴 GOD MODE: OFF"
+                    btn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+                end
             end
         end
     end
 end
 
-LocalPlayer.CharacterAdded:Connect(function(character)
+LocalPlayer.CharacterAdded:Connect(function()
     wait(0.5)
     SetCollision(not state.autoFarm)
     if state.godMode then
@@ -481,9 +481,6 @@ LocalPlayer.CharacterAdded:Connect(function(character)
     end
     UpdateCenterPosition()
 end)
-
-local screenGui = nil
-local mainFrame = nil
 
 CreateMenu()
 UpdateCenterPosition()
